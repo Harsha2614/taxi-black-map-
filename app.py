@@ -180,8 +180,10 @@ def sim_step():
     with sim_lock:
         if manual_action is not None:
             action = int(manual_action)
+            decision_reason = "manual override selected this action"
         else:
             action = _planned_action(sim_env)
+            decision_reason = _decision_reason(sim_env, action)
 
         next_state, reward, done, info = sim_env.step(action)
         grid = _serialize_state(sim_env)
@@ -204,8 +206,9 @@ def sim_step():
         'pass_label': info['pass_label'],
         'dest_label': info['dest_label'],
         'pass_on_board': info['pass_on_board'],
+        'decision_reason': decision_reason,
         'state': grid,
-        'message': _build_log_message(info, action),
+        'message': _build_log_message(info, action, decision_reason),
     })
 
 
@@ -227,6 +230,7 @@ def sim_auto():
 
     for _ in range(max_steps):
         action = _planned_action(env)
+        decision_reason = _decision_reason(env, action)
 
         next_state, reward, done, info = env.step(action)
         steps_log.append({
@@ -241,6 +245,8 @@ def sim_auto():
             'energy': info.get('energy', 100),
             'traffic_penalty': info.get('traffic_penalty', 0),
             'weather_penalty': info.get('weather_penalty', 0),
+            'decision_reason': decision_reason,
+            'message': _build_log_message(info, action, decision_reason),
             'planned_route': _planned_route(env),
         })
         if done:
@@ -488,6 +494,37 @@ def _planned_route(env):
     }
 
 
+def _decision_reason(env, action):
+    """Explain why the planner selected the current action."""
+    route = _planned_route(env)
+    phase = route['phase']
+    target = route['target']
+
+    if action == 4:
+        return f"at pickup zone {LOC_LABELS[env.pass_loc]}, so pickup is the shortest next action"
+    if action == 5:
+        return f"at destination zone {LOC_LABELS[env.destination]}, so drop-off completes the ride"
+
+    cells = route.get('cells', [])
+    if len(cells) >= 2:
+        current = cells[0]
+        nxt = cells[1]
+        traffic = float(env.traffic_grid[nxt['row']][nxt['col']]) if hasattr(env, 'traffic_grid') else 0.0
+        weather = float(env.weather_grid[nxt['row']][nxt['col']]) if hasattr(env, 'weather_grid') else 0.0
+        hazard_bits = []
+        if traffic >= 0.45:
+            hazard_bits.append(f"traffic {traffic:.2f}")
+        if weather >= 0.40:
+            hazard_bits.append(f"weather {weather:.2f}")
+        hazard_text = " and ".join(hazard_bits) if hazard_bits else "lower traffic/weather risk"
+        return (
+            f"following the A* {phase} route toward ({target['row']},{target['col']}); "
+            f"next cell ({nxt['row']},{nxt['col']}) keeps the path shortest with {hazard_text}"
+        )
+
+    return "no better detour was available, so this keeps the ride progressing toward the goal"
+
+
 def _serialize_state(env):
     state = env.get_grid_state()
     state['planned_route'] = _planned_route(env)
@@ -508,9 +545,11 @@ def _planned_action(env):
     return _shortest_path_action(env, target_row, target_col)
 
 
-def _build_log_message(info, action):
+def _build_log_message(info, action, reason=None):
     from taxi_env import ACTION_NAMES
     parts = [f"{ACTION_NAMES[action]}"]
+    if reason:
+        parts.append(f"Why: {reason}")
     if info.get('traffic_penalty', 0) > 0:
         parts.append(f"Traffic -{info['traffic_penalty']:.2f}")
     if info.get('weather_penalty', 0) > 0:

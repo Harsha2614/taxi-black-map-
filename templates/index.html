@@ -358,9 +358,10 @@ h1 .hl{color:var(--accent);}
 <div id="page-map" class="page">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
-    #map-container { position:relative; height:calc(100vh - 56px); display:grid; grid-template-columns:1fr 340px; }
-    #hyderabad-map { width:100%; height:100%; z-index:1; }
-    #map-sidebar { background:var(--bg2); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+    #map-container { position:relative; min-height:calc(100vh - 56px); display:grid; grid-template-columns:minmax(0,1fr) 340px; grid-template-rows:minmax(62vh, 1fr) auto; }
+    #map-main { min-height:0; display:flex; }
+    #hyderabad-map { width:100%; height:100%; min-height:62vh; z-index:1; }
+    #map-sidebar { background:var(--bg2); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow-y:auto; min-height:0; }
     .map-panel { padding:1rem 1.1rem; border-bottom:1px solid var(--border); }
     .map-panel-title { font-size:11px; font-family:var(--font-mono); color:var(--text2); text-transform:uppercase; letter-spacing:.07em; margin-bottom:.75rem; display:flex; align-items:center; gap:6px; }
     .map-panel-title::before { content:''; width:3px; height:12px; background:var(--accent); border-radius:2px; }
@@ -374,14 +375,18 @@ h1 .hl{color:var(--accent);}
     .map-stat-lbl { font-size:9px; font-family:var(--font-mono); color:var(--text2); margin-bottom:2px; text-transform:uppercase; }
     .map-stat-val { font-family:var(--font-mono); font-size:1.1rem; font-weight:700; }
     .map-ctrl-row { display:flex; gap:6px; flex-wrap:wrap; }
-    .map-log { flex:1; overflow-y:auto; padding:.75rem 1.1rem; font-family:var(--font-mono); font-size:10px; line-height:1.7; background:var(--bg); }
+    .map-log-shell { grid-column:1 / -1; background:var(--bg2); border-top:1px solid var(--border); }
+    .map-log-wrap { padding:1rem 1.1rem 1.1rem; }
+    .map-log { max-height:220px; overflow-y:auto; padding:.85rem 1rem; font-family:var(--font-mono); font-size:10px; line-height:1.7; background:var(--bg); border:1px solid var(--border); border-radius:10px; }
     .map-log-entry { color:var(--text2); border-bottom:1px solid var(--border); padding:3px 0; }
     .map-log-entry.pick { color:var(--accent3); }
     .map-log-entry.drop { color:var(--accent2); }
     .map-log-entry.warn { color:var(--accent4); }
     .map-prog { background:var(--bg); border-radius:3px; height:4px; overflow:hidden; margin-top:6px; }
     .map-prog-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,var(--accent2),var(--accent3)); transition:width .4s; }
-    .map-zone-list { display:flex; flex-direction:column; gap:8px; }
+    .map-zone-list { display:flex; flex-direction:column; gap:8px; max-height:none; }
+    #map-zones .loc-badge { display:none; }
+    #map-zones + .legend { display:none; }
     .map-zone-item { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
     .map-zone-item.traffic { border-color:rgba(239,68,68,.35); }
     .map-zone-item.weather { border-color:rgba(139,92,246,.35); }
@@ -393,11 +398,13 @@ h1 .hl{color:var(--accent);}
     @keyframes taxibob { from{transform:translateY(0)} to{transform:translateY(-3px)} }
     .pulse-ring { border-radius:50%; animation:pulsering 1.5s ease-out infinite; }
     @keyframes pulsering { 0%{transform:scale(.8);opacity:1} 100%{transform:scale(2.2);opacity:0} }
-    @media(max-width:700px){ #map-container{grid-template-columns:1fr;grid-template-rows:55vh auto;} #map-sidebar{max-height:45vh;} }
+    @media(max-width:700px){ #map-container{grid-template-columns:1fr;grid-template-rows:55vh auto auto;} #map-sidebar{border-left:none;border-top:1px solid var(--border);max-height:none;} #hyderabad-map{min-height:55vh;} }
   </style>
 
   <div id="map-container">
-    <div id="hyderabad-map"></div>
+    <div id="map-main">
+      <div id="hyderabad-map"></div>
+    </div>
     <div id="map-sidebar">
 
       <!-- Locations -->
@@ -424,6 +431,23 @@ h1 .hl{color:var(--accent);}
             <div class="lb-name">Banjara Hills</div>
             <div class="lb-addr">Road No. 12, Hyd</div>
           </div>
+          <div class="loc-badge" style="background:rgba(249,115,22,.1);border-color:rgba(249,115,22,.4);color:#f97316;">
+            <div class="lb-label">P â€” PICKUP ZONE E</div>
+            <div class="lb-name">Punjagutta</div>
+            <div class="lb-addr">Punjagutta Main Rd, Hyd</div>
+          </div>
+          <div class="loc-badge" style="background:rgba(168,85,247,.1);border-color:rgba(168,85,247,.4);color:#a855f7;">
+            <div class="lb-label">O â€” PICKUP ZONE F</div>
+            <div class="lb-name">Lakdikapul</div>
+            <div class="lb-addr">Lakdikapul Junction, Hyd</div>
+          </div>
+        </div>
+        <div class="legend" style="margin-top:.9rem;">
+          <div class="leg"><div class="leg-dot" style="background:rgba(245,200,66,.5);border:1px solid var(--accent)"></div>Taxi</div>
+          <div class="leg"><div class="leg-dot" style="background:rgba(16,185,129,.4);border:1px solid var(--accent3)"></div>Pickup</div>
+          <div class="leg"><div class="leg-dot" style="background:rgba(59,130,246,.4);border:1px solid var(--accent2)"></div>Drop-off</div>
+          <div class="leg"><div class="leg-dot" style="background:rgba(239,68,68,.3)"></div>Traffic zone</div>
+          <div class="leg"><div class="leg-dot" style="background:rgba(139,92,246,.3)"></div>Weather zone</div>
         </div>
       </div>
 
@@ -454,12 +478,41 @@ h1 .hl{color:var(--accent);}
         <div class="map-panel-title">Traffic & Weather Zones</div>
         <div class="map-zone-list" id="map-zones">
           <div class="map-zone-empty">Start a ride to load live traffic and weather hotspots.</div>
+          <div class="loc-badge" style="background:rgba(249,115,22,.1);border-color:rgba(249,115,22,.4);color:#f97316;">
+            <div class="lb-label">P â€” PICKUP ZONE E</div>
+            <div class="lb-name">Punjagutta</div>
+            <div class="lb-addr">Punjagutta Main Rd, Hyd</div>
+          </div>
+          <div class="loc-badge" style="background:rgba(168,85,247,.1);border-color:rgba(168,85,247,.4);color:#a855f7;">
+            <div class="lb-label">O â€” PICKUP ZONE F</div>
+            <div class="lb-name">Lakdikapul</div>
+            <div class="lb-addr">Lakdikapul Junction, Hyd</div>
+          </div>
+          <div class="loc-badge" style="background:rgba(249,115,22,.1);border-color:rgba(249,115,22,.4);color:#f97316;">
+            <div class="lb-label">P â€” PICKUP ZONE E</div>
+            <div class="lb-name">Punjagutta</div>
+            <div class="lb-addr">Punjagutta Main Rd, Hyd</div>
+          </div>
+          <div class="loc-badge" style="background:rgba(168,85,247,.1);border-color:rgba(168,85,247,.4);color:#a855f7;">
+            <div class="lb-label">O â€” PICKUP ZONE F</div>
+            <div class="lb-name">Lakdikapul</div>
+            <div class="lb-addr">Lakdikapul Junction, Hyd</div>
+          </div>
+        </div>
+        <div class="legend" style="margin-top:.9rem;">
+          <div class="leg"><div class="leg-dot" style="background:rgba(245,200,66,.5);border:1px solid var(--accent)"></div>Taxi</div>
+          <div class="leg"><div class="leg-dot" style="background:rgba(16,185,129,.4);border:1px solid var(--accent3)"></div>Pickup</div>
+          <div class="leg"><div class="leg-dot" style="background:rgba(59,130,246,.4);border:1px solid var(--accent2)"></div>Drop-off</div>
+          <div class="leg"><div class="leg-dot" style="background:rgba(239,68,68,.3)"></div>Traffic zone</div>
+          <div class="leg"><div class="leg-dot" style="background:rgba(139,92,246,.3)"></div>Weather zone</div>
         </div>
       </div>
-
-      <!-- Log -->
-      <div class="map-panel-title" style="padding:.75rem 1.1rem .25rem;margin:0;">Action Log</div>
-      <div class="map-log" id="map-log"><div style="color:var(--text3);">// Start a ride to see live actions...</div></div>
+    </div>
+    <div class="map-log-shell">
+      <div class="map-log-wrap">
+        <div class="map-panel-title" style="margin-bottom:.6rem;">Action Log</div>
+        <div class="map-log" id="map-log"><div style="color:var(--text3);">// Start a ride to see live actions...</div></div>
+      </div>
     </div>
   </div>
 </div>
@@ -674,10 +727,7 @@ async function doStep() {
   renderGrid(data.state);
   updateMetrics(data);
 
-  let msg = data.action_name;
-  if (data.traffic_penalty > 0) msg += ` | Traffic -${data.traffic_penalty.toFixed(2)}`;
-  if (data.weather_penalty > 0) msg += ` | Weather -${data.weather_penalty.toFixed(2)}`;
-  msg += ` | r=${data.reward.toFixed(1)}`;
+  let msg = data.decision_reason ? `${data.action_name} | Why: ${data.decision_reason}` : (data.message || data.action_name);
   if (data.event === 'pickup') addLog(msg + ` ✓ Picked up ${data.pass_label}`, 'lp');
   else if (data.event === 'dropoff') addLog(msg + ` ✓ Dropped at ${data.dest_label}`, 'ld');
   else if (data.event.includes('illegal')) addLog(msg + ' ✗ illegal action', 'lx');
@@ -769,10 +819,7 @@ async function runAuto() {
         return;
       }
       const s = steps[i++];
-      let msg = s.action_name;
-      if (s.traffic_penalty > 0) msg += ` | Traffic -${s.traffic_penalty.toFixed(2)}`;
-      if (s.weather_penalty > 0) msg += ` | Weather -${s.weather_penalty.toFixed(2)}`;
-      msg += ` | r=${s.reward.toFixed(1)}`;
+      let msg = s.message || s.action_name;
       addLog(msg, s.event === 'pickup' ? 'lp' : s.event === 'dropoff' ? 'ld' : '');
       setTimeout(replayStep, 30);
     }
@@ -1147,7 +1194,7 @@ function renderHazardZones(state) {
     return;
   }
 
-  zoneList.innerHTML = hotspots.slice(0, 6).map(cell => {
+  zoneList.innerHTML = hotspots.map(cell => {
     const primaryType = cell.traffic >= cell.weather ? 'traffic' : 'weather';
     const primaryValue = primaryType === 'traffic' ? cell.traffic : cell.weather;
     return `
@@ -1437,7 +1484,7 @@ async function mapDoStep() {
   }
   if (data.event === 'energy_depleted') mapAddLog('⚠ Energy depleted!', 'warn');
 
-  let msg = data.action_name;
+  let msg = data.decision_reason ? `${data.action_name} | Why: ${data.decision_reason}` : (data.message || data.action_name);
   if (data.traffic_penalty > 0) msg += ` | 🚦 -${data.traffic_penalty.toFixed(1)}`;
   if (data.weather_penalty > 0) msg += ` | 🌧 -${data.weather_penalty.toFixed(1)}`;
   msg += ` r=${data.reward.toFixed(1)}`;
@@ -1548,9 +1595,7 @@ async function mapAutoRun() {
     const e = step.energy ?? 100;
     document.getElementById('mm-energy').textContent = e.toFixed(1);
     document.getElementById('mm-energy-bar').style.width = Math.max(0, e) + '%';
-    let msg = step.action_name;
-    if (step.traffic_penalty > 0) msg += ` | Traffic -${step.traffic_penalty.toFixed(1)}`;
-    if (step.weather_penalty > 0) msg += ` | Weather -${step.weather_penalty.toFixed(1)}`;
+    let msg = step.decision_reason ? `${step.action_name} | Why: ${step.decision_reason}` : (step.message || step.action_name);
     mapAddLog(msg);
 
     await wait(Math.max(40, mapSpeed === 700 ? 120 : 20));
