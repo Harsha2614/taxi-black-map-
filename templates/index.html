@@ -195,7 +195,7 @@ h1 .hl{color:var(--accent);}
     <div>
       <div class="hero-tag">Final Year Project · AI &amp; Reinforcement Learning</div>
       <h1>Autonomous Taxi<br>Navigation via<br><span class="hl">Q-Learning</span></h1>
-      <p class="hero-desc">A reinforcement learning agent trained on the Taxi-v3 environment. The Q-agent learns optimal pickup and drop-off policies through 10,000 training episodes, incorporating traffic congestion and weather penalties.</p>
+      <p class="hero-desc">Train the taxi agent from scratch, then simulate a ride that follows an A* shortest path with traffic and weather awareness layered into the route selection.</p>
       <div class="cta-row">
         <button class="btn-p" onclick="newRide();document.getElementById('sim-section').scrollIntoView({behavior:'smooth'})">Run Simulation</button>
         <button class="btn-o" onclick="showPage('train')">Retrain Model</button>
@@ -482,9 +482,9 @@ function showPage(id) {
 }
 
 // ─── Constants ──────────────────────────────────
-const LOCS = [[0,0],[0,4],[4,0],[4,3]];
-const LOC_LABELS = ['R','G','Y','B'];
-const LOC_COLORS = ['#ef4444','#10b981','#f5c842','#3b82f6'];
+const LOCS = [[0,0],[0,4],[4,0],[4,3],[2,2],[1,1]];
+const LOC_LABELS = ['R','G','Y','B','P','O'];
+const LOC_COLORS = ['#ef4444','#10b981','#f5c842','#3b82f6','#f97316','#a855f7'];
 const ACTION_NAMES = ['South','North','East','West','Pickup','Drop-off'];
 
 // ─── State ──────────────────────────────────────
@@ -970,7 +970,6 @@ async function checkStatus() {
   initHeroGrid();
   initSimGrid();
   await checkStatus();
-  await newRide();
   setInterval(checkStatus, 5000);
 })();
 
@@ -993,6 +992,8 @@ const MAP_LOCS = [
   { label:'G', name:'HITEC City',         lat:17.4435, lng:78.3772, color:'#10b981' },  // adjusted into grid
   { label:'Y', name:'Secunderabad Stn',   lat:17.4399, lng:78.4983, color:'#f5c842' },
   { label:'B', name:'Banjara Hills',      lat:17.4156, lng:78.4480, color:'#3b82f6' },
+  { label:'P', name:'Punjagutta',         lat:17.4280, lng:78.4510, color:'#f97316' },
+  { label:'O', name:'Lakdikapul',         lat:17.4045, lng:78.4563, color:'#a855f7' },
 ];
 
 // Remap to fit in our bounding box
@@ -1001,6 +1002,8 @@ const MAP_LOCS_ADJUSTED = [
   { label:'G', name:'HITEC City',        lat:17.450, lng:78.381, color:'#10b981' },
   { label:'Y', name:'Secunderabad',      lat:17.440, lng:78.500, color:'#f5c842' },
   { label:'B', name:'Banjara Hills',     lat:17.416, lng:78.448, color:'#3b82f6' },
+  { label:'P', name:'Punjagutta',        lat:17.400, lng:78.473, color:'#f97316' },
+  { label:'O', name:'Lakdikapul',        lat:17.441, lng:78.446, color:'#a855f7' },
 ];
 
 const ROAD_NODE_OFFSETS = [
@@ -1043,6 +1046,15 @@ function getSegmentMidpoint(start, end, bend = 0.18) {
   return [midLat + (-dx * bend), midLng + (dy * bend)];
 }
 
+function getRoadSegmentPath(start, end) {
+  const sameLat = Math.abs(start[0] - end[0]) < 0.000001;
+  const bend = sameLat
+    ? (end[1] >= start[1] ? 0.14 : -0.14)
+    : (end[0] >= start[0] ? -0.14 : 0.14);
+  const mid = getSegmentMidpoint(start, end, bend);
+  return [start, mid, end];
+}
+
 function drawBaseRoadNetwork() {
   if (!mapObj) return;
   if (baseRoadLayer) baseRoadLayer.clearLayers();
@@ -1052,15 +1064,15 @@ function drawBaseRoadNetwork() {
       const start = gridToLatLng(r, c);
       if (c < 4) {
         const east = gridToLatLng(r, c + 1);
-        const mid = getSegmentMidpoint(start, east, 0.14);
-        L.polyline([start, mid, east], {
+        const roadPath = getRoadSegmentPath(start, east);
+        L.polyline(roadPath, {
           color: 'rgba(148,163,184,.55)',
           weight: 7,
           opacity: 0.28,
           lineCap: 'round',
           lineJoin: 'round'
         }).addTo(baseRoadLayer);
-        L.polyline([start, mid, east], {
+        L.polyline(roadPath, {
           color: 'rgba(245,200,66,.16)',
           weight: 2.2,
           opacity: 0.8,
@@ -1070,15 +1082,15 @@ function drawBaseRoadNetwork() {
       }
       if (r < 4) {
         const south = gridToLatLng(r + 1, c);
-        const mid = getSegmentMidpoint(start, south, -0.14);
-        L.polyline([start, mid, south], {
+        const roadPath = getRoadSegmentPath(start, south);
+        L.polyline(roadPath, {
           color: 'rgba(148,163,184,.5)',
           weight: 7,
           opacity: 0.24,
           lineCap: 'round',
           lineJoin: 'round'
         }).addTo(baseRoadLayer);
-        L.polyline([start, mid, south], {
+        L.polyline(roadPath, {
           color: 'rgba(96,165,250,.14)',
           weight: 2,
           opacity: 0.8,
@@ -1167,17 +1179,57 @@ function redrawTrail(finalColor = null) {
 }
 
 function getMapAnimDuration() {
-  return mapSpeed === 700 ? 650 : 220;
+  return mapSpeed === 700 ? 1100 : 420;
 }
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function getRoadSegmentPoints(start, end) {
+  return getRoadSegmentPath(start, end);
+}
+
+function densifyPath(points, samplesPerSegment = 16) {
+  const dense = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const start = points[i];
+    const end = points[i + 1];
+    const startIndex = i === 0 ? 0 : 1;
+    for (let step = startIndex; step <= samplesPerSegment; step++) {
+      const t = step / samplesPerSegment;
+      dense.push([
+        start[0] + (end[0] - start[0]) * t,
+        start[1] + (end[1] - start[1]) * t
+      ]);
+    }
+  }
+  return dense;
+}
+
+function appendTrailSegment(points) {
+  if (!points.length) return;
+  if (!mapTrailCoords.length) {
+    mapTrailCoords = points.slice();
+    return;
+  }
+
+  points.forEach((point, idx) => {
+    if (idx === 0) return;
+    mapTrailCoords.push(point);
+  });
+}
+
 async function animateTaxiTo(nextLat, nextLng, onBoard) {
-  if (!taxiMarker) return;
+  if (!taxiMarker) return [];
 
   const start = taxiMarker.getLatLng();
+  if (Math.abs(start.lat - nextLat) < 0.000001 && Math.abs(start.lng - nextLng) < 0.000001) {
+    taxiMarker.setIcon(makeTaxiIcon(onBoard));
+    return [[nextLat, nextLng]];
+  }
+  const roadPoints = getRoadSegmentPoints([start.lat, start.lng], [nextLat, nextLng]);
+  const densePath = densifyPath(roadPoints, mapSpeed === 700 ? 18 : 10);
   const duration = getMapAnimDuration();
   const startTs = performance.now();
   taxiMarker.setIcon(makeTaxiIcon(onBoard));
@@ -1186,8 +1238,8 @@ async function animateTaxiTo(nextLat, nextLng, onBoard) {
     function frame(now) {
       const t = Math.min(1, (now - startTs) / duration);
       const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      const lat = start.lat + (nextLat - start.lat) * eased;
-      const lng = start.lng + (nextLng - start.lng) * eased;
+      const idx = Math.min(densePath.length - 1, Math.round(eased * (densePath.length - 1)));
+      const [lat, lng] = densePath[idx];
       taxiMarker.setLatLng([lat, lng]);
       if (t < 1) requestAnimationFrame(frame);
       else resolve();
@@ -1195,7 +1247,56 @@ async function animateTaxiTo(nextLat, nextLng, onBoard) {
     requestAnimationFrame(frame);
   });
 
-  mapObj.panTo([nextLat, nextLng], { animate: true, duration: Math.max(0.15, duration / 1000) });
+  if (mapObj) {
+    mapObj.panTo([nextLat, nextLng], { animate: true, duration: Math.max(0.25, duration / 1000) });
+  }
+  return densePath;
+}
+
+function getRoutePolylinePoints(routeCells) {
+  if (!routeCells || routeCells.length < 2) return [];
+  const points = [];
+
+  routeCells.forEach((cell, idx) => {
+    const current = gridToLatLng(cell.row, cell.col);
+    if (idx === 0) {
+      points.push(current);
+      return;
+    }
+    const previousCell = routeCells[idx - 1];
+    const previous = gridToLatLng(previousCell.row, previousCell.col);
+    const segment = getRoadSegmentPath(previous, current);
+    segment.forEach((point, segmentIdx) => {
+      if (idx > 0 && segmentIdx === 0) return;
+      points.push(point);
+    });
+  });
+
+  return points;
+}
+
+function drawPlannedRoute(route) {
+  if (!routeLayer) return;
+  routeLayer.clearLayers();
+  const points = getRoutePolylinePoints(route?.cells || []);
+  if (points.length < 2) return;
+
+  L.polyline(points, {
+    color: route?.phase === 'pickup' ? '#22c55e' : '#60a5fa',
+    weight: 5,
+    opacity: 0.9,
+    lineCap: 'round',
+    lineJoin: 'round'
+  }).addTo(routeLayer);
+
+  L.polyline(points, {
+    color: '#f8fafc',
+    weight: 1.6,
+    opacity: 0.45,
+    lineCap: 'round',
+    lineJoin: 'round',
+    dashArray: '10 8'
+  }).addTo(routeLayer);
 }
 
 function initMap() {
@@ -1230,9 +1331,9 @@ function initMap() {
     });
     baseRoadLayer = L.layerGroup().addTo(mapObj);
     hazardLayer = L.layerGroup().addTo(mapObj);
+    routeLayer = L.layerGroup().addTo(mapObj);
     trailLayer = L.layerGroup().addTo(mapObj);
     drawBaseRoadNetwork();
-    mapNewRide();
   };
   document.head.appendChild(script);
 }
@@ -1261,7 +1362,7 @@ async function mapNewRide() {
   mapTrailCoords = [];
   if (trailLayer) trailLayer.clearLayers();
   if (hazardLayer) hazardLayer.clearLayers();
-  if (routeLayer) { mapObj.removeLayer(routeLayer); routeLayer = null; }
+  if (routeLayer) routeLayer.clearLayers();
   document.getElementById('map-log').innerHTML = '';
 
   const data = await api('/api/sim/new', { method: 'POST', body: {} });
@@ -1294,6 +1395,7 @@ async function mapNewRide() {
   mapObj.setView([tLat, tLng], 13);
   mapTrailCoords.push([tLat, tLng]);
   mapHazardCells = s.cells || [];
+  drawPlannedRoute(s.planned_route);
   renderHazardZones(s);
   updateMapStats(s, {});
   mapAddLog(`New ride · Pickup: ${pickLoc.name} (${s.pass_label}) → Drop: ${dropLoc.name} (${s.dest_label})`, 'pick');
@@ -1316,10 +1418,10 @@ async function mapDoStep() {
   const s = data.state;
   const [tLat, tLng] = gridToLatLng(s.taxi.row, s.taxi.col);
 
-  await animateTaxiTo(tLat, tLng, s.pass_on_board);
-
-  mapTrailCoords.push([tLat, tLng]);
+  const trailSegment = await animateTaxiTo(tLat, tLng, s.pass_on_board);
+  appendTrailSegment(trailSegment);
   mapHazardCells = s.cells || mapHazardCells;
+  drawPlannedRoute(s.planned_route);
   redrawTrail();
   renderHazardZones(s);
 
@@ -1422,6 +1524,7 @@ async function mapAutoRun() {
   mapTrailCoords = [];
   mapHazardCells = data.final_grid?.cells || mapHazardCells;
   if (trailLayer) trailLayer.clearLayers();
+  drawPlannedRoute(data.final_grid?.planned_route);
   document.getElementById('map-log').innerHTML = '';
 
   async function replayNext() {
@@ -1434,9 +1537,9 @@ async function mapAutoRun() {
     }
     const step = data.steps[i++];
     const [lat, lng] = gridToLatLng(step.taxi.row, step.taxi.col);
-    mapTrailCoords.push([lat, lng]);
-
-    await animateTaxiTo(lat, lng, !!step.pass_on_board);
+    const trailSegment = await animateTaxiTo(lat, lng, !!step.pass_on_board);
+    appendTrailSegment(trailSegment);
+    drawPlannedRoute(step.planned_route);
     redrawTrail();
     renderHazardZones({ cells: mapHazardCells });
 

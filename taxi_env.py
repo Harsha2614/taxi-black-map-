@@ -1,46 +1,45 @@
 """
-Taxi-v3 Environment — pure Python/numpy implementation.
-Compatible with the original OpenAI Gym Taxi-v3 logic.
+Taxi-v3-style environment with extended traffic and weather metadata.
 """
 import numpy as np
 import random
 
-# Fixed pickup/dropoff locations: R(0,0), G(0,4), Y(4,0), B(4,3)
-LOCS = [(0, 0), (0, 4), (4, 0), (4, 3)]
-LOC_LABELS = ['R', 'G', 'Y', 'B']
-LOC_COLORS = ['#ef4444', '#10b981', '#f5c842', '#3b82f6']
+# Fixed pickup/dropoff locations across the grid.
+LOCS = [(0, 0), (0, 4), (4, 0), (4, 3), (2, 2), (1, 1)]
+LOC_LABELS = ['R', 'G', 'Y', 'B', 'P', 'O']
+LOC_COLORS = ['#ef4444', '#10b981', '#f5c842', '#3b82f6', '#f97316', '#a855f7']
 
-# Walls in the grid (col boundaries between cells)
-# Format: (row, col, direction) where direction = 'E' means wall on east side of (row,col)
+# Walls in the grid (kept for future expansion).
 WALLS = {
-    (0, 1, 'S'), (1, 1, 'S'),           # vertical wall between col1-col2, rows 0-1
-    (3, 0, 'S'), (4, 0, 'S'),           # vertical wall between col0-col1, rows 3-4
-    (3, 2, 'S'), (4, 2, 'S'),           # vertical wall between col2-col3, rows 3-4
+    (0, 1, 'S'), (1, 1, 'S'),
+    (3, 0, 'S'), (4, 0, 'S'),
+    (3, 2, 'S'), (4, 2, 'S'),
 }
 
 ACTION_NAMES = ['South', 'North', 'East', 'West', 'Pickup', 'Drop-off']
-# Move deltas: S, N, E, W
 MOVES = [(1, 0), (-1, 0), (0, 1), (0, -1)]
 
-NUM_STATES = 500   # 5*5*5*4
+NUM_LOCATIONS = len(LOCS)
+PASSENGER_STATES = NUM_LOCATIONS + 1
+NUM_STATES = 25 * PASSENGER_STATES * NUM_LOCATIONS
 NUM_ACTIONS = 6
 
 
 def encode_state(taxi_row, taxi_col, pass_loc, destination):
-    """Encode (row, col, pass, dest) → integer state 0-499"""
+    """Encode (row, col, passenger, destination) into a dense integer state."""
     i = taxi_row
     i = i * 5 + taxi_col
-    i = i * 5 + pass_loc
-    i = i * 4 + destination
+    i = i * PASSENGER_STATES + pass_loc
+    i = i * NUM_LOCATIONS + destination
     return i
 
 
 def decode_state(state):
-    """Decode integer state → (taxi_row, taxi_col, pass_loc, destination)"""
-    destination = state % 4
-    state //= 4
-    pass_loc = state % 5
-    state //= 5
+    """Decode an integer state into (taxi_row, taxi_col, pass_loc, destination)."""
+    destination = state % NUM_LOCATIONS
+    state //= NUM_LOCATIONS
+    pass_loc = state % PASSENGER_STATES
+    state //= PASSENGER_STATES
     taxi_col = state % 5
     state //= 5
     taxi_row = state
@@ -58,10 +57,10 @@ class TaxiEnv:
             self.rng = random.Random(seed)
         self.taxi_row = self.rng.randint(0, 4)
         self.taxi_col = self.rng.randint(0, 4)
-        self.pass_loc = self.rng.randint(0, 3)   # passenger at one of 4 locs
-        self.destination = self.rng.randint(0, 3)
+        self.pass_loc = self.rng.randint(0, NUM_LOCATIONS - 1)
+        self.destination = self.rng.randint(0, NUM_LOCATIONS - 1)
         while self.destination == self.pass_loc:
-            self.destination = self.rng.randint(0, 3)
+            self.destination = self.rng.randint(0, NUM_LOCATIONS - 1)
         self.pass_on_board = False
         self.done = False
         self.steps = 0
@@ -71,7 +70,7 @@ class TaxiEnv:
         return encode_state(self.taxi_row, self.taxi_col, self.pass_loc, self.destination)
 
     def can_move(self, row, col, action):
-        """Check if movement is blocked by a wall"""
+        """Check whether a move stays inside the grid."""
         dr, dc = MOVES[action]
         nr, nc = row + dr, col + dc
         if nr < 0 or nr > 4 or nc < 0 or nc > 4:
@@ -80,9 +79,12 @@ class TaxiEnv:
 
     def step(self, action):
         if self.done:
-            return encode_state(self.taxi_row, self.taxi_col,
-                                4 if self.pass_on_board else self.pass_loc,
-                                self.destination), 0, True, {}
+            return encode_state(
+                self.taxi_row,
+                self.taxi_col,
+                NUM_LOCATIONS if self.pass_on_board else self.pass_loc,
+                self.destination,
+            ), 0, True, {}
 
         reward = -1
         info = {'action_name': ACTION_NAMES[action], 'event': 'move'}
@@ -91,27 +93,30 @@ class TaxiEnv:
             ok, nr, nc = self.can_move(self.taxi_row, self.taxi_col, action)
             if ok:
                 self.taxi_row, self.taxi_col = nr, nc
-                info['event'] = 'move'
             else:
-                reward = -1  # wall hit (same as move penalty in original)
                 info['event'] = 'wall'
 
-        elif action == 4:  # Pickup
+        elif action == 4:
             pick_loc = LOCS[self.pass_loc]
-            if (not self.pass_on_board and
-                    self.taxi_row == pick_loc[0] and self.taxi_col == pick_loc[1]):
+            if (
+                not self.pass_on_board
+                and self.taxi_row == pick_loc[0]
+                and self.taxi_col == pick_loc[1]
+            ):
                 self.pass_on_board = True
                 self.pickup_time = self.steps
-                reward = -1
                 info['event'] = 'pickup'
             else:
                 reward = -10
                 info['event'] = 'illegal_pickup'
 
-        elif action == 5:  # Drop-off
+        elif action == 5:
             dest_loc = LOCS[self.destination]
-            if (self.pass_on_board and
-                    self.taxi_row == dest_loc[0] and self.taxi_col == dest_loc[1]):
+            if (
+                self.pass_on_board
+                and self.taxi_row == dest_loc[0]
+                and self.taxi_col == dest_loc[1]
+            ):
                 self.pass_on_board = False
                 self.dropoff_time = self.steps
                 reward = 20
@@ -124,7 +129,7 @@ class TaxiEnv:
         self.steps += 1
         self.total_reward += reward
 
-        pass_state = 4 if self.pass_on_board else self.pass_loc
+        pass_state = NUM_LOCATIONS if self.pass_on_board else self.pass_loc
         next_state = encode_state(self.taxi_row, self.taxi_col, pass_state, self.destination)
 
         info.update({
@@ -142,7 +147,7 @@ class TaxiEnv:
 
 
 class TaxiEnvExtended(TaxiEnv):
-    """Extended version with traffic, weather, energy, satisfaction."""
+    """Extended version with traffic, weather, energy, and satisfaction."""
 
     def __init__(self, seed=None):
         self.traffic_grid = np.zeros((5, 5))
@@ -180,7 +185,7 @@ class TaxiEnvExtended(TaxiEnv):
         reward -= traffic_pen
         reward -= weather_pen
         self.energy = max(0.0, self.energy - energy_cost)
-        self.total_reward = self.total_reward - traffic_pen - weather_pen  # adjust
+        self.total_reward = self.total_reward - traffic_pen - weather_pen
 
         if self.energy <= 0:
             reward -= 20
@@ -189,7 +194,6 @@ class TaxiEnvExtended(TaxiEnv):
             self.done = True
             info['event'] = 'energy_depleted'
 
-        # Satisfaction bonus on completion
         if done and self.pickup_time is not None and self.dropoff_time is not None:
             wait_penalty = self.pickup_time * 0.2
             ride_penalty = (self.dropoff_time - self.pickup_time) * 0.1
@@ -213,10 +217,12 @@ class TaxiEnvExtended(TaxiEnv):
         for r in range(5):
             for c in range(5):
                 cells.append({
-                    'row': r, 'col': c,
+                    'row': r,
+                    'col': c,
                     'traffic': round(float(self.traffic_grid[r][c]), 2),
                     'weather': round(float(self.weather_grid[r][c]), 2),
                 })
+
         return {
             'cells': cells,
             'taxi': {'row': self.taxi_row, 'col': self.taxi_col},
@@ -225,18 +231,16 @@ class TaxiEnvExtended(TaxiEnv):
             'destination': self.destination,
             'pass_label': LOC_LABELS[self.pass_loc],
             'dest_label': LOC_LABELS[self.destination],
-            'locs': [{'row': r, 'col': c, 'label': LOC_LABELS[i], 'color': LOC_COLORS[i]}
-                     for i, (r, c) in enumerate(LOCS)],
+            'locs': [
+                {'row': r, 'col': c, 'label': LOC_LABELS[i], 'color': LOC_COLORS[i]}
+                for i, (r, c) in enumerate(LOCS)
+            ],
             'energy': round(self.energy, 2),
             'total_reward': round(self.total_reward, 2),
             'steps': self.steps,
             'done': self.done,
         }
 
-
-# ──────────────────────────────────────────────
-#  Q-LEARNING TRAINER
-# ──────────────────────────────────────────────
 
 class QLearningAgent:
     def __init__(self, alpha=0.1, gamma=0.99, epsilon=1.0,
@@ -263,8 +267,7 @@ class QLearningAgent:
     def decay_epsilon(self):
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
-    def train(self, num_episodes=10000, max_steps=200,
-              progress_callback=None):
+    def train(self, num_episodes=10000, max_steps=200, progress_callback=None):
         env = TaxiEnv()
         self.episode_rewards = []
 
@@ -286,7 +289,7 @@ class QLearningAgent:
                 progress_callback(ep, num_episodes, total_r)
 
         self.trained = True
-        self.epsilon = self.epsilon_min  # lock to greedy post-training
+        self.epsilon = self.epsilon_min
 
     def get_best_action(self, state):
         return int(np.argmax(self.q_table[state]))
@@ -305,16 +308,17 @@ class QLearningAgent:
         return rows
 
     def training_stats(self):
-        r = self.episode_rewards
-        if not r:
+        rewards = self.episode_rewards
+        if not rewards:
             return {}
         return {
-            'total_episodes': len(r),
+            'total_episodes': len(rewards),
             'final_epsilon': round(self.epsilon, 4),
-            'avg_reward_last_100': round(float(np.mean(r[-100:])), 2),
-            'avg_reward_overall': round(float(np.mean(r)), 2),
-            'max_reward': round(float(np.max(r)), 2),
-            'min_reward': round(float(np.min(r)), 2),
-            'reward_history_sampled': [round(float(v), 2)
-                                       for v in r[::max(1, len(r)//200)]],
+            'avg_reward_last_100': round(float(np.mean(rewards[-100:])), 2),
+            'avg_reward_overall': round(float(np.mean(rewards)), 2),
+            'max_reward': round(float(np.max(rewards)), 2),
+            'min_reward': round(float(np.min(rewards)), 2),
+            'reward_history_sampled': [
+                round(float(v), 2) for v in rewards[::max(1, len(rewards) // 200)]
+            ],
         }

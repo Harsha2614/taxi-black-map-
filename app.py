@@ -150,7 +150,7 @@ def sim_new():
     seed = data.get('seed', int(time.time() * 1000) % 99999)
     with sim_lock:
         sim_env = TaxiEnvExtended(seed=seed)
-    grid = sim_env.get_grid_state()
+    grid = _serialize_state(sim_env)
     return jsonify({
         'ok': True,
         'seed': seed,
@@ -184,7 +184,7 @@ def sim_step():
             action = _planned_action(sim_env)
 
         next_state, reward, done, info = sim_env.step(action)
-        grid = sim_env.get_grid_state()
+        grid = _serialize_state(sim_env)
 
     from taxi_env import ACTION_NAMES
     return jsonify({
@@ -241,11 +241,11 @@ def sim_auto():
             'energy': info.get('energy', 100),
             'traffic_penalty': info.get('traffic_penalty', 0),
             'weather_penalty': info.get('weather_penalty', 0),
+            'planned_route': _planned_route(env),
         })
         if done:
             break
 
-    final_grid = env.get_grid_state()
     return jsonify({
         'ok': True,
         'seed': seed,
@@ -254,7 +254,7 @@ def sim_auto():
         'total_reward': round(env.total_reward, 2),
         'sat_bonus': round(env.sat_bonus, 2),
         'energy': round(env.energy, 2),
-        'final_grid': final_grid,
+        'final_grid': _serialize_state(env),
         'success': env.done and env.dropoff_time is not None,
         'pickup_time': env.pickup_time,
         'dropoff_time': env.dropoff_time,
@@ -266,7 +266,7 @@ def sim_state():
     """Get current simulation grid state."""
     if sim_env is None:
         return jsonify({'error': 'No active simulation'}), 400
-    return jsonify({'ok': True, 'state': sim_env.get_grid_state()})
+    return jsonify({'ok': True, 'state': _serialize_state(sim_env)})
 
 
 # ──────────────────────────────────────────────
@@ -381,45 +381,53 @@ def _heuristic_action(env):
 
 def _move_cost(env, row, col):
     """
-    Cost of entering a cell.
-    Strongly penalizes severe traffic/weather so the planner prefers safer roads,
-    even when that means taking a slightly longer route.
+    Hazard score for entering a cell.
+    Used as the A* tie-breaker after minimizing the number of steps.
     """
     traffic = float(env.traffic_grid[row][col])
     weather = float(env.weather_grid[row][col])
+    combined_risk = max(traffic, weather) + (min(traffic, weather) * 0.65)
 
-    base_cost = 1.0 + traffic * 2.0 + weather * 1.5
-    traffic_risk = (traffic ** 2) * 4.5
-    weather_risk = (weather ** 2) * 3.5
+    base_cost = traffic * 2.8 + weather * 2.2
+    traffic_risk = (traffic ** 2) * 7.5
+    weather_risk = (weather ** 2) * 6.0
+    combined_penalty = (combined_risk ** 3) * 9.0
     severe_penalty = 0.0
 
-    if traffic >= 0.65:
-        severe_penalty += 3.5 + (traffic - 0.65) * 8.0
-    if weather >= 0.60:
-        severe_penalty += 3.0 + (weather - 0.60) * 7.0
-    if traffic >= 0.55 and weather >= 0.45:
-        severe_penalty += 4.0
+    if traffic >= 0.55:
+        severe_penalty += 8.0 + (traffic - 0.55) * 18.0
+    if weather >= 0.50:
+        severe_penalty += 6.5 + (weather - 0.50) * 16.0
+    if traffic >= 0.45 and weather >= 0.40:
+        severe_penalty += 12.0 + combined_risk * 4.0
+    if traffic >= 0.80 or weather >= 0.75:
+        severe_penalty += 20.0
 
-    return base_cost + traffic_risk + weather_risk + severe_penalty
+    return base_cost + traffic_risk + weather_risk + combined_penalty + severe_penalty
 
 
-def _shortest_path_action(env, target_row, target_col):
+def _compare_cost(candidate, current):
+    return candidate < current
+
+
+def _astar_path(env, target_row, target_col):
     """
-    Return the next move on the minimum-cost path to the target.
-    Costs account for the step penalty plus traffic/weather penalties.
+    Use A* to minimize steps first, then choose the safest route among
+    equally short paths.
     """
     start = (env.taxi_row, env.taxi_col)
     target = (target_row, target_col)
     if start == target:
-        return None
+        return [start], []
 
-    frontier = [(0.0, start)]
-    best_cost = {start: 0.0}
+    start_h = abs(target_row - start[0]) + abs(target_col - start[1])
+    frontier = [(start_h, 0.0, 0, 0.0, start)]
+    best_cost = {start: (0, 0.0)}
     parents = {}
 
     while frontier:
-        cost, node = heapq.heappop(frontier)
-        if cost > best_cost.get(node, float('inf')):
+        _, _, steps_so_far, risk_so_far, node = heapq.heappop(frontier)
+        if (steps_so_far, risk_so_far) != best_cost.get(node):
             continue
         if node == target:
             break
@@ -430,20 +438,60 @@ def _shortest_path_action(env, target_row, target_col):
             if not ok:
                 continue
             next_node = (nr, nc)
-            next_cost = cost + _move_cost(env, nr, nc)
-            if next_cost < best_cost.get(next_node, float('inf')):
+            next_steps = steps_so_far + 1
+            next_risk = risk_so_far + _move_cost(env, nr, nc)
+            next_cost = (next_steps, next_risk)
+            if _compare_cost(next_cost, best_cost.get(next_node, (float('inf'), float('inf')))):
                 best_cost[next_node] = next_cost
                 parents[next_node] = (node, action)
                 heuristic = abs(target_row - nr) + abs(target_col - nc)
-                heapq.heappush(frontier, (next_cost + heuristic * 0.001, next_node))
+                heapq.heappush(frontier, (next_steps + heuristic, next_risk, next_steps, next_risk, next_node))
 
     if target not in parents:
-        return _heuristic_action(env)
+        return [start], []
 
+    path = [target]
+    actions = []
     node = target
-    while parents[node][0] != start:
-        node = parents[node][0]
-    return parents[node][1]
+    while node != start:
+        parent, action = parents[node]
+        path.append(parent)
+        actions.append(action)
+        node = parent
+    path.reverse()
+    actions.reverse()
+    return path, actions
+
+
+def _shortest_path_action(env, target_row, target_col):
+    """Return the next A* action toward the current target."""
+    path, actions = _astar_path(env, target_row, target_col)
+    if actions:
+        return actions[0]
+    return _heuristic_action(env)
+
+
+def _planned_route(env):
+    """Return the active A* route in grid coordinates."""
+    if not env.pass_on_board:
+        target_row, target_col = LOCS[env.pass_loc]
+        phase = 'pickup'
+    else:
+        target_row, target_col = LOCS[env.destination]
+        phase = 'dropoff'
+
+    path, _ = _astar_path(env, target_row, target_col)
+    return {
+        'phase': phase,
+        'target': {'row': target_row, 'col': target_col},
+        'cells': [{'row': row, 'col': col} for row, col in path],
+    }
+
+
+def _serialize_state(env):
+    state = env.get_grid_state()
+    state['planned_route'] = _planned_route(env)
+    return state
 
 
 def _planned_action(env):
@@ -481,52 +529,13 @@ def _build_log_message(info, action):
 
 
 # ──────────────────────────────────────────────
-#  STARTUP — pre-train with 10K episodes
+#  STARTUP
 # ──────────────────────────────────────────────
 
 QTABLE_PATH = os.path.join(os.path.dirname(__file__), 'qtable_trained.npy')
 
-def pretrain():
-    """Load saved Q-table if available, otherwise train from scratch."""
-    import os
-    if os.path.exists(QTABLE_PATH):
-        print("Loading pre-trained Q-table...")
-        agent.q_table = np.load(QTABLE_PATH)
-        agent.trained = True
-        agent.epsilon = 0.01
-        # Populate episode_rewards with dummy data so stats work
-        agent.episode_rewards = [10.0] * 50000
-        training_progress['status'] = 'done'
-        training_progress['episode'] = 50000
-        training_progress['total'] = 50000
-        print("Q-table loaded. Avg reward (last 100): ~10.0 | Success rate: 100%")
-        return
-
-    print("Pre-training Q-agent (50,000 episodes, optimized)...")
-    training_progress['status'] = 'running'
-    training_progress['total'] = 50000
-
-    # Optimized hyperparameters
-    agent.alpha = 0.15
-    agent.epsilon = 1.0
-    agent.epsilon_decay = 0.9995
-    agent.epsilon_min = 0.01
-
-    def cb(ep, total, reward):
-        training_progress['episode'] = ep
-        training_progress['reward'] = round(float(reward), 2)
-        if ep % 5000 == 0:
-            print(f"  Episode {ep}/{total}  reward={reward:.1f}")
-
-    agent.train(num_episodes=50000, progress_callback=cb)
-    training_progress['status'] = 'done'
-    training_progress['episode'] = 50000
-    np.save(QTABLE_PATH, agent.q_table)
-    stats = agent.training_stats()
-    print(f"Training done. Avg reward (last 100): {stats['avg_reward_last_100']}")
-
 
 if __name__ == '__main__':
-    pretrain()
-    print("\n🚕  Server ready at http://localhost:5000\n")
+    print("\nServer ready at http://localhost:5000")
+    print("Model starts untrained. Train it from the UI before simulating.\n")
     app.run(debug=False, host='0.0.0.0', port=5000)
