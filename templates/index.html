@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoTaxi · Q-Learning Navigation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0a0c10;--bg2:#10131a;--bg3:#161b26;--card:#1a2033;--border:#252d40;
+  --accent:#f5c842;--accent2:#3b82f6;--accent3:#10b981;--accent4:#ef4444;--accent5:#8b5cf6;
+  --text:#e8eaf0;--text2:#8a92a6;--text3:#4a5270;
+  --font-mono:'Space Mono',monospace;--font-body:'DM Sans',sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-height:100vh;overflow-x:hidden;}
+
+/* ── NAV ── */
+nav{display:flex;align-items:center;justify-content:space-between;padding:0 2rem;height:56px;border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:100;}
+.nav-logo{font-family:var(--font-mono);font-size:13px;color:var(--accent);letter-spacing:.08em;}
+.nav-logo span{color:var(--text2);}
+.nav-tabs{display:flex;gap:0;}
+.nav-tab{padding:0 1.25rem;height:56px;display:flex;align-items:center;font-size:13px;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;}
+.nav-tab:hover{color:var(--text);}
+.nav-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.status-pill{display:flex;align-items:center;gap:6px;font-size:11px;font-family:var(--font-mono);color:var(--accent3);background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);border-radius:20px;padding:4px 10px;}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--accent3);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── PAGES ── */
+.page{display:none;} .page.active{display:block;}
+
+/* ── HERO ── */
+.hero{padding:4rem 2rem 2.5rem;max-width:1200px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center;}
+.hero-tag{font-family:var(--font-mono);font-size:11px;color:var(--accent);letter-spacing:.15em;margin-bottom:1rem;display:flex;align-items:center;gap:8px;}
+.hero-tag::before{content:'';width:20px;height:1px;background:var(--accent);}
+h1{font-size:clamp(1.8rem,3.5vw,3rem);font-weight:600;line-height:1.1;margin-bottom:1.2rem;letter-spacing:-.02em;}
+h1 .hl{color:var(--accent);}
+.hero-desc{color:var(--text2);font-size:14.5px;line-height:1.8;margin-bottom:2rem;}
+.cta-row{display:flex;gap:10px;flex-wrap:wrap;}
+.btn-p{background:var(--accent);color:#0a0c10;padding:9px 20px;border-radius:6px;font-size:12.5px;font-weight:600;border:none;cursor:pointer;font-family:var(--font-body);transition:opacity .2s;}
+.btn-p:hover{opacity:.85;}
+.btn-o{background:transparent;color:var(--text);padding:9px 20px;border-radius:6px;font-size:12.5px;font-weight:500;border:1px solid var(--border);cursor:pointer;font-family:var(--font-body);transition:border-color .2s;}
+.btn-o:hover{border-color:var(--text2);}
+
+/* ── GRID PREVIEW ── */
+.grid-canvas{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:1.25rem;}
+.grid-mono{font-family:var(--font-mono);font-size:10px;color:var(--text3);margin-bottom:.75rem;letter-spacing:.05em;}
+.preview-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;}
+.pcell{aspect-ratio:1;border-radius:5px;background:var(--bg2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;font-family:var(--font-mono);}
+.pcell.taxi{background:rgba(245,200,66,.15);border-color:var(--accent);color:var(--accent);}
+.pcell.pickup{background:rgba(16,185,129,.1);border-color:var(--accent3);color:var(--accent3);}
+.pcell.dropoff{background:rgba(59,130,246,.1);border-color:var(--accent2);color:var(--accent2);}
+.pcell.traffic{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3);}
+.pcell.weather{background:rgba(139,92,246,.08);border-color:rgba(139,92,246,.3);}
+
+/* ── STATS BAR ── */
+.stats-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-top:1px solid var(--border);max-width:100%;}
+.stat-block{background:var(--bg2);padding:1.2rem 1.5rem;}
+.stat-val{font-family:var(--font-mono);font-size:1.5rem;font-weight:700;margin-bottom:.2rem;}
+.stat-lbl{font-size:11.5px;color:var(--text2);}
+.stat-sub{font-size:10.5px;color:var(--accent3);font-family:var(--font-mono);margin-top:.15rem;}
+
+/* ── LEGEND ── */
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:1rem;}
+.leg{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--text2);}
+.leg-dot{width:8px;height:8px;border-radius:2px;}
+
+/* ── MAIN LAYOUT ── */
+.main-wrap{max-width:1200px;margin:0 auto;padding:1.5rem 2rem;display:grid;grid-template-columns:1.45fr 1fr;gap:1.5rem;}
+
+/* ── CARD ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.card-hd{display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.2rem;border-bottom:1px solid var(--border);}
+.card-title{font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px;}
+.card-title::before{content:'';width:3px;height:14px;background:var(--accent);border-radius:2px;}
+.card-body{padding:1.2rem;}
+
+/* ── SIM GRID ── */
+.sim-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:1rem;}
+.scell{aspect-ratio:1;border-radius:6px;background:var(--bg2);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;font-family:var(--font-mono);cursor:pointer;transition:all .2s;position:relative;font-weight:700;}
+.scell.s-taxi{background:rgba(245,200,66,.18);border-color:var(--accent);box-shadow:0 0 12px rgba(245,200,66,.3);color:var(--accent);}
+.scell.s-pickup{background:rgba(16,185,129,.12);border-color:var(--accent3);}
+.scell.s-dropoff{background:rgba(59,130,246,.12);border-color:var(--accent2);}
+.scell.s-visited{background:rgba(245,200,66,.05);border-color:rgba(245,200,66,.18);}
+
+/* ── CONTROLS ── */
+.ctrl-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:.85rem;}
+.cbtn{padding:6px 13px;border-radius:5px;font-size:11px;font-family:var(--font-mono);cursor:pointer;border:1px solid;transition:all .2s;}
+.cbtn-y{background:rgba(245,200,66,.12);border-color:var(--accent);color:var(--accent);}
+.cbtn-y:hover{background:rgba(245,200,66,.22);}
+.cbtn-g{background:rgba(16,185,129,.1);border-color:var(--accent3);color:var(--accent3);}
+.cbtn-g:hover{background:rgba(16,185,129,.2);}
+.cbtn-n{background:var(--bg2);border-color:var(--border);color:var(--text2);}
+.cbtn-n:hover{border-color:var(--text2);color:var(--text);}
+.cbtn-b{background:rgba(59,130,246,.1);border-color:var(--accent2);color:var(--accent2);}
+.cbtn-b:hover{background:rgba(59,130,246,.2);}
+
+/* ── LOG ── */
+.log-wrap{margin-top:.85rem;}
+.log-hd{display:flex;justify-content:space-between;font-size:10.5px;color:var(--text2);font-family:var(--font-mono);margin-bottom:.4rem;}
+.log-panel{background:var(--bg);border:1px solid var(--border);border-radius:7px;height:150px;overflow-y:auto;padding:.7rem;font-family:var(--font-mono);font-size:10.5px;line-height:1.7;}
+.le{color:var(--text2);} .le.lp{color:var(--accent3);} .le.ld{color:var(--accent2);}
+.le.lr{color:var(--accent);} .le.lx{color:var(--accent4);}
+.le .lts{color:var(--text3);margin-right:5px;}
+
+/* ── METRICS ── */
+.m-stack{display:flex;flex-direction:column;gap:.85rem;}
+.mc{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1rem 1.15rem;}
+.mc-lbl{font-size:11px;color:var(--text2);font-family:var(--font-mono);margin-bottom:.45rem;text-transform:uppercase;letter-spacing:.06em;}
+.bnum{font-family:var(--font-mono);font-size:1.9rem;font-weight:700;line-height:1;}
+.bnum.pos{color:var(--accent3);} .bnum.neg{color:var(--accent4);} .bnum.neu{color:var(--accent);}
+.sub-lbl{font-size:11.5px;color:var(--text2);margin-top:.3rem;}
+.prog{background:var(--bg);border-radius:3px;height:5px;overflow:hidden;margin-top:.55rem;}
+.prog-fill{height:100%;border-radius:3px;transition:width .5s;}
+.prog-e{background:linear-gradient(90deg,#ef4444,#f5c842,#10b981);}
+.prog-s{background:linear-gradient(90deg,var(--accent2),var(--accent3));}
+
+/* ── REWARD BAR CHART ── */
+.rbars{display:flex;align-items:flex-end;gap:4px;height:75px;margin-top:.5rem;}
+.rbar{flex:1;border-radius:3px 3px 0 0;min-height:4px;transition:height .5s;cursor:default;background:rgba(245,200,66,.35);}
+.rbar.neg{background:rgba(239,68,68,.35);}
+.rbar:hover{background:var(--accent);}
+.rbar.neg:hover{background:var(--accent4);}
+
+/* ── TRAIN PAGE ── */
+.train-wrap{max-width:900px;margin:0 auto;padding:2rem;}
+.train-form{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;}
+.form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem;}
+.form-field{display:flex;flex-direction:column;gap:.4rem;}
+.form-label{font-size:11px;font-family:var(--font-mono);color:var(--text2);}
+.form-input{background:var(--bg2);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:7px 10px;font-size:13px;font-family:var(--font-mono);outline:none;}
+.form-input:focus{border-color:var(--accent2);}
+.train-btn{background:var(--accent);color:#0a0c10;padding:10px 24px;border-radius:6px;font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:var(--font-body);}
+.train-btn:disabled{opacity:.5;cursor:default;}
+.prog-track{background:var(--bg);border-radius:4px;height:8px;overflow:hidden;margin-top:1rem;}
+.prog-track-fill{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:4px;transition:width .3s;width:0%;}
+.train-log{background:var(--bg);border:1px solid var(--border);border-radius:7px;height:200px;overflow-y:auto;padding:.75rem;font-family:var(--font-mono);font-size:11px;line-height:1.7;margin-top:1rem;color:var(--text2);}
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-top:1.5rem;}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:1rem;}
+.stat-c-lbl{font-size:11px;color:var(--text2);font-family:var(--font-mono);margin-bottom:.35rem;}
+.stat-c-val{font-family:var(--font-mono);font-size:1.3rem;font-weight:700;}
+
+/* ── Q-TABLE PAGE ── */
+.qt-wrap{max-width:1100px;margin:0 auto;padding:2rem;}
+.hm-grid{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;margin-top:1rem;}
+.hm-cell{aspect-ratio:1;border-radius:3px;cursor:pointer;transition:transform .15s;}
+.hm-cell:hover{transform:scale(1.3);}
+.qt-detail{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.2rem;margin-top:1.5rem;}
+.action-bars{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:.75rem;}
+.act-col{display:flex;flex-direction:column;align-items:center;gap:4px;}
+.act-bar-wrap{height:80px;display:flex;align-items:flex-end;width:100%;}
+.act-bar{width:100%;border-radius:3px 3px 0 0;background:rgba(59,130,246,.4);min-height:4px;transition:height .4s;}
+.act-bar.best{background:var(--accent);}
+.act-lbl{font-size:9px;font-family:var(--font-mono);color:var(--text2);text-align:center;}
+.act-val{font-size:9px;font-family:var(--font-mono);color:var(--text3);}
+
+/* ── ANALYTICS PAGE ── */
+.analytics-wrap{max-width:1100px;margin:0 auto;padding:2rem;}
+.bench-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem;}
+.bench-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.1rem;}
+.bench-lbl{font-size:11px;color:var(--text2);font-family:var(--font-mono);margin-bottom:.4rem;}
+.bench-val{font-family:var(--font-mono);font-size:1.5rem;font-weight:700;}
+#training-chart-wrap{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.2rem;}
+#training-chart-wrap canvas{width:100%!important;}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:4px;} ::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+
+/* ── RESPONSIVE ── */
+@media(max-width:800px){
+  .hero,.main-wrap{grid-template-columns:1fr;} .stats-bar,.form-grid,.bench-grid{grid-template-columns:repeat(2,1fr);}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">AUTO<span>TAXI</span></div>
+  <div class="nav-tabs">
+    <div class="nav-tab active" onclick="showPage('sim')">Simulation</div>
+    <div class="nav-tab" onclick="showPage('train')">Training</div>
+    <div class="nav-tab" onclick="showPage('qtable')">Q-Table</div>
+    <div class="nav-tab" onclick="showPage('analytics')">Analytics</div>
+    <div class="nav-tab" onclick="showPage('map')">🗺 Live Map</div>
+  </div>
+  <div class="status-pill"><div class="status-dot"></div><span id="nav-status">Loading...</span></div>
+</nav>
+
+<!-- ══════════ PAGE: SIMULATION ══════════ -->
+<div id="page-sim" class="page active">
+  <div class="hero">
+    <div>
+      <div class="hero-tag">Final Year Project · AI &amp; Reinforcement Learning</div>
+      <h1>Autonomous Taxi<br>Navigation via<br><span class="hl">Q-Learning</span></h1>
+      <p class="hero-desc">A reinforcement learning agent trained on the Taxi-v3 environment. The Q-agent learns optimal pickup and drop-off policies through 10,000 training episodes, incorporating traffic congestion and weather penalties.</p>
+      <div class="cta-row">
+        <button class="btn-p" onclick="newRide();document.getElementById('sim-section').scrollIntoView({behavior:'smooth'})">Run Simulation</button>
+        <button class="btn-o" onclick="showPage('train')">Retrain Model</button>
+        <button class="btn-o" onclick="showPage('analytics')">View Analytics</button>
+      </div>
+    </div>
+    <div>
+      <div class="grid-canvas">
+        <div class="grid-mono">// TAXI-V3 ENVIRONMENT · 5×5 GRID</div>
+        <div class="preview-grid" id="hero-grid"></div>
+        <div class="legend">
+          <div class="leg"><div class="leg-dot" style="background:rgba(245,200,66,.5);border:1px solid var(--accent)"></div>Taxi</div>
+          <div class="leg"><div class="leg-dot" style="background:rgba(16,185,129,.4);border:1px solid var(--accent3)"></div>Pickup (R/G/Y/B)</div>
+          <div class="leg"><div class="leg-dot" style="background:rgba(59,130,246,.4);border:1px solid var(--accent2)"></div>Drop-off</div>
+          <div class="leg"><div class="leg-dot" style="background:rgba(239,68,68,.3)"></div>Traffic zone</div>
+          <div class="leg"><div class="leg-dot" style="background:rgba(139,92,246,.3)"></div>Weather zone</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat-block"><div class="stat-val" id="sb-episodes">10,000</div><div class="stat-lbl">Training Episodes</div><div class="stat-sub">Fully converged</div></div>
+    <div class="stat-block"><div class="stat-val">500</div><div class="stat-lbl">Q-Table States</div><div class="stat-sub">6 actions each</div></div>
+    <div class="stat-block"><div class="stat-val">0.10</div><div class="stat-lbl">Final ε Epsilon</div><div class="stat-sub">Decay: 0.999/ep</div></div>
+    <div class="stat-block"><div class="stat-val" id="sb-avg">—</div><div class="stat-lbl">Avg Reward (last 100)</div><div class="stat-sub" id="sb-avg-sub">Run benchmark</div></div>
+  </div>
+
+  <div class="main-wrap" id="sim-section">
+    <!-- SIMULATION CARD -->
+    <div class="card">
+      <div class="card-hd">
+        <div class="card-title">Live Simulation</div>
+        <span id="sim-status-label" style="font-size:11px;font-family:var(--font-mono);color:var(--text2);">READY</span>
+      </div>
+      <div class="card-body">
+        <div class="sim-grid" id="sim-grid"></div>
+        <div class="ctrl-row">
+          <button class="cbtn cbtn-y" id="btn-run" onclick="toggleRun()">▶ START RIDE</button>
+          <button class="cbtn cbtn-n" onclick="resetSim()">⟳ RESET</button>
+          <button class="cbtn cbtn-n" id="btn-speed" onclick="toggleSpeed()">⚡ FAST</button>
+          <button class="cbtn cbtn-b" onclick="newRide()">↻ NEW RIDE</button>
+          <button class="cbtn cbtn-g" onclick="runAuto()">⚡ AUTO-RUN</button>
+        </div>
+        <div class="log-wrap">
+          <div class="log-hd"><span>ACTION LOG</span><span id="step-ctr">step 0</span></div>
+          <div class="log-panel" id="log-panel"><div class="le" style="color:var(--text3);">// Initialize a ride to begin...</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- METRICS -->
+    <div class="m-stack">
+      <div class="mc"><div class="mc-lbl">Total Reward</div><div class="bnum neu" id="m-reward">—</div><div class="sub-lbl" id="m-reward-sub">Start a simulation</div></div>
+      <div class="mc"><div class="mc-lbl">Steps Taken</div><div class="bnum" id="m-steps">—</div><div class="sub-lbl" id="m-steps-sub">—</div></div>
+      <div class="mc">
+        <div class="mc-lbl">Ride History</div>
+        <div class="rbars" id="rbars"></div>
+        <div class="sub-lbl" id="m-history">No rides yet</div>
+      </div>
+      <div class="mc">
+        <div class="mc-lbl">Satisfaction Score</div>
+        <div class="bnum" id="m-sat">—</div>
+        <div class="prog"><div class="prog-fill prog-s" id="m-sat-fill" style="width:0%"></div></div>
+        <div class="sub-lbl" id="m-sat-sub">Pickup wait + ride time</div>
+      </div>
+      <div class="mc">
+        <div class="mc-lbl">Energy Remaining</div>
+        <div class="bnum" id="m-energy">100.0</div>
+        <div class="prog"><div class="prog-fill prog-e" id="m-energy-fill" style="width:100%"></div></div>
+        <div class="sub-lbl">Traffic + weather drain energy</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ PAGE: TRAINING ══════════ -->
+<div id="page-train" class="page">
+  <div class="train-wrap">
+    <div style="margin-bottom:1.5rem;">
+      <div class="hero-tag" style="margin-bottom:.5rem;">Q-Learning Configuration</div>
+      <h2 style="font-size:1.5rem;font-weight:600;">Retrain the Agent</h2>
+      <p style="color:var(--text2);font-size:14px;margin-top:.5rem;">Adjust hyperparameters and kick off a new training run. The server trains a fresh Q-table and replaces the current model.</p>
+    </div>
+
+    <div class="train-form">
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">EPISODES</label><input class="form-input" id="f-episodes" type="number" value="50000" min="100" max="100000"></div>
+        <div class="form-field"><label class="form-label">LEARNING RATE (α)</label><input class="form-input" id="f-alpha" type="number" value="0.15" step="0.01" min="0.001" max="1"></div>
+        <div class="form-field"><label class="form-label">DISCOUNT FACTOR (γ)</label><input class="form-input" id="f-gamma" type="number" value="0.99" step="0.01" min="0.5" max="1"></div>
+        <div class="form-field"><label class="form-label">EPSILON DECAY</label><input class="form-input" id="f-decay" type="number" value="0.9995" step="0.0001" min="0.9" max="0.9999"></div>
+        <div class="form-field"><label class="form-label">MIN EPSILON</label><input class="form-input" id="f-emin" type="number" value="0.01" step="0.01" min="0.01" max="0.5"></div>
+        <div class="form-field" style="display:flex;flex-direction:column;justify-content:flex-end;">
+          <button class="train-btn" id="btn-train" onclick="startTraining()">▶ Start Training</button>
+        </div>
+      </div>
+      <div class="prog-track"><div class="prog-track-fill" id="train-prog-fill"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:10.5px;font-family:var(--font-mono);color:var(--text2);margin-top:.4rem;">
+        <span id="train-prog-lbl">Ready</span>
+        <span id="train-prog-pct">0%</span>
+      </div>
+      <div class="train-log" id="train-log"><div style="color:var(--text3);">// Configure and press Start Training...</div></div>
+    </div>
+
+    <div class="stats-grid" id="train-stats" style="display:none;">
+      <div class="stat-card"><div class="stat-c-lbl">AVG REWARD (LAST 100)</div><div class="stat-c-val" id="ts-avg100">—</div></div>
+      <div class="stat-card"><div class="stat-c-lbl">AVG REWARD (OVERALL)</div><div class="stat-c-val" id="ts-avg">—</div></div>
+      <div class="stat-card"><div class="stat-c-lbl">MAX REWARD SEEN</div><div class="stat-c-val" id="ts-max">—</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ PAGE: Q-TABLE ══════════ -->
+<div id="page-qtable" class="page">
+  <div class="qt-wrap">
+    <div style="margin-bottom:1.5rem;">
+      <div class="hero-tag" style="margin-bottom:.5rem;">Value Function</div>
+      <h2 style="font-size:1.5rem;font-weight:600;">Q-Table Heatmap</h2>
+      <p style="color:var(--text2);font-size:14px;margin-top:.5rem;">Each cell represents a state (row) × max Q-value. Brighter = higher value. Click any cell to inspect all 6 action values.</p>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <div style="font-size:11px;color:var(--text2);font-family:var(--font-mono);margin-bottom:.75rem;">States 0–99 shown · 6 actions each · click to inspect</div>
+        <div class="hm-grid" id="qt-heatmap"></div>
+      </div>
+    </div>
+    <div class="qt-detail" id="qt-detail" style="display:none;">
+      <div style="font-size:12px;font-family:var(--font-mono);color:var(--text2);margin-bottom:.5rem;" id="qt-detail-title">State —</div>
+      <div class="action-bars" id="qt-action-bars"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ PAGE: ANALYTICS ══════════ -->
+<div id="page-analytics" class="page">
+  <div class="analytics-wrap">
+    <div style="margin-bottom:1.5rem;display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+      <div>
+        <div class="hero-tag" style="margin-bottom:.5rem;">Performance Analysis</div>
+        <h2 style="font-size:1.5rem;font-weight:600;">Benchmark Results</h2>
+      </div>
+      <button class="cbtn cbtn-y" onclick="runBenchmark()">⚡ RUN BENCHMARK (20 rides)</button>
+    </div>
+    <div class="bench-grid">
+      <div class="bench-card"><div class="bench-lbl">SUCCESS RATE</div><div class="bench-val" id="ba-success">—</div></div>
+      <div class="bench-card"><div class="bench-lbl">AVG REWARD</div><div class="bench-val" id="ba-avg">—</div></div>
+      <div class="bench-card"><div class="bench-lbl">AVG STEPS</div><div class="bench-val" id="ba-steps">—</div></div>
+      <div class="bench-card"><div class="bench-lbl">MAX REWARD</div><div class="bench-val" id="ba-max">—</div></div>
+    </div>
+    <div id="training-chart-wrap">
+      <div style="font-size:12px;font-family:var(--font-mono);color:var(--text2);margin-bottom:1rem;">TRAINING REWARD CURVE</div>
+      <canvas id="reward-curve" height="220"></canvas>
+    </div>
+    <div style="margin-top:1.5rem;" id="bench-table-wrap" style="display:none;"></div>
+  </div>
+</div>
+
+
+<!-- ══════════ PAGE: MAP ══════════ -->
+<div id="page-map" class="page">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    #map-container { position:relative; height:calc(100vh - 56px); display:grid; grid-template-columns:1fr 340px; }
+    #hyderabad-map { width:100%; height:100%; z-index:1; }
+    #map-sidebar { background:var(--bg2); border-left:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+    .map-panel { padding:1rem 1.1rem; border-bottom:1px solid var(--border); }
+    .map-panel-title { font-size:11px; font-family:var(--font-mono); color:var(--text2); text-transform:uppercase; letter-spacing:.07em; margin-bottom:.75rem; display:flex; align-items:center; gap:6px; }
+    .map-panel-title::before { content:''; width:3px; height:12px; background:var(--accent); border-radius:2px; }
+    .loc-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+    .loc-badge { border-radius:6px; padding:7px 10px; font-size:11px; font-family:var(--font-mono); border:1px solid; }
+    .loc-badge .lb-label { font-size:9px; opacity:.6; margin-bottom:2px; }
+    .loc-badge .lb-name { font-weight:700; font-size:12px; }
+    .loc-badge .lb-addr { font-size:9px; opacity:.55; margin-top:1px; line-height:1.4; }
+    .map-stat-row { display:grid; grid-template-columns:repeat(2,1fr); gap:6px; }
+    .map-stat { background:var(--bg); border-radius:6px; padding:8px 10px; }
+    .map-stat-lbl { font-size:9px; font-family:var(--font-mono); color:var(--text2); margin-bottom:2px; text-transform:uppercase; }
+    .map-stat-val { font-family:var(--font-mono); font-size:1.1rem; font-weight:700; }
+    .map-ctrl-row { display:flex; gap:6px; flex-wrap:wrap; }
+    .map-log { flex:1; overflow-y:auto; padding:.75rem 1.1rem; font-family:var(--font-mono); font-size:10px; line-height:1.7; background:var(--bg); }
+    .map-log-entry { color:var(--text2); border-bottom:1px solid var(--border); padding:3px 0; }
+    .map-log-entry.pick { color:var(--accent3); }
+    .map-log-entry.drop { color:var(--accent2); }
+    .map-log-entry.warn { color:var(--accent4); }
+    .map-prog { background:var(--bg); border-radius:3px; height:4px; overflow:hidden; margin-top:6px; }
+    .map-prog-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,var(--accent2),var(--accent3)); transition:width .4s; }
+    .map-zone-list { display:flex; flex-direction:column; gap:8px; }
+    .map-zone-item { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+    .map-zone-item.traffic { border-color:rgba(239,68,68,.35); }
+    .map-zone-item.weather { border-color:rgba(139,92,246,.35); }
+    .map-zone-top { display:flex; justify-content:space-between; gap:8px; font-size:10px; font-family:var(--font-mono); color:var(--text2); text-transform:uppercase; }
+    .map-zone-name { font-size:12px; font-weight:600; color:var(--text); margin-top:3px; }
+    .map-zone-meta { font-size:10px; color:var(--text2); margin-top:2px; line-height:1.5; }
+    .map-zone-empty { color:var(--text3); font-family:var(--font-mono); font-size:10px; }
+    .taxi-icon-wrap { display:flex; align-items:center; justify-content:center; font-size:22px; filter:drop-shadow(0 2px 4px rgba(0,0,0,.5)); animation:taxibob .8s ease-in-out infinite alternate; }
+    @keyframes taxibob { from{transform:translateY(0)} to{transform:translateY(-3px)} }
+    .pulse-ring { border-radius:50%; animation:pulsering 1.5s ease-out infinite; }
+    @keyframes pulsering { 0%{transform:scale(.8);opacity:1} 100%{transform:scale(2.2);opacity:0} }
+    @media(max-width:700px){ #map-container{grid-template-columns:1fr;grid-template-rows:55vh auto;} #map-sidebar{max-height:45vh;} }
+  </style>
+
+  <div id="map-container">
+    <div id="hyderabad-map"></div>
+    <div id="map-sidebar">
+
+      <!-- Locations -->
+      <div class="map-panel">
+        <div class="map-panel-title">Hyderabad Route Landmarks</div>
+        <div class="loc-grid">
+          <div class="loc-badge" style="background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.4);color:#ef4444;">
+            <div class="lb-label">R — PICKUP ZONE A</div>
+            <div class="lb-name">Charminar</div>
+            <div class="lb-addr">Old City, Hyderabad</div>
+          </div>
+          <div class="loc-badge" style="background:rgba(16,185,129,.1);border-color:rgba(16,185,129,.4);color:#10b981;">
+            <div class="lb-label">G — PICKUP ZONE B</div>
+            <div class="lb-name">HITEC City</div>
+            <div class="lb-addr">Madhapur, Hyderabad</div>
+          </div>
+          <div class="loc-badge" style="background:rgba(245,200,66,.1);border-color:rgba(245,200,66,.4);color:#f5c842;">
+            <div class="lb-label">Y — PICKUP ZONE C</div>
+            <div class="lb-name">Secunderabad Stn</div>
+            <div class="lb-addr">Secunderabad, Hyd</div>
+          </div>
+          <div class="loc-badge" style="background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.4);color:#3b82f6;">
+            <div class="lb-label">B — PICKUP ZONE D</div>
+            <div class="lb-name">Banjara Hills</div>
+            <div class="lb-addr">Road No. 12, Hyd</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live stats -->
+      <div class="map-panel">
+        <div class="map-panel-title">Live Ride Stats</div>
+        <div class="map-stat-row">
+          <div class="map-stat"><div class="map-stat-lbl">Total Reward</div><div class="map-stat-val" id="mm-reward" style="color:var(--accent)">—</div></div>
+          <div class="map-stat"><div class="map-stat-lbl">Steps</div><div class="map-stat-val" id="mm-steps">—</div></div>
+          <div class="map-stat"><div class="map-stat-lbl">Energy</div><div class="map-stat-val" id="mm-energy">100</div></div>
+          <div class="map-stat"><div class="map-stat-lbl">Status</div><div class="map-stat-val" id="mm-status" style="font-size:.8rem;color:var(--text2)">READY</div></div>
+        </div>
+        <div class="map-prog"><div class="map-prog-fill" id="mm-energy-bar" style="width:100%"></div></div>
+      </div>
+
+      <!-- Controls -->
+      <div class="map-panel">
+        <div class="map-panel-title">Controls</div>
+        <div class="map-ctrl-row">
+          <button class="cbtn cbtn-y" id="map-btn-run" onclick="mapToggleRun()">▶ START</button>
+          <button class="cbtn cbtn-n" onclick="mapNewRide()">↻ NEW RIDE</button>
+          <button class="cbtn cbtn-b" onclick="mapAutoRun()">⚡ AUTO</button>
+          <button class="cbtn cbtn-n" id="map-btn-speed" onclick="mapToggleSpeed()">⚡ FAST</button>
+        </div>
+      </div>
+
+      <div class="map-panel">
+        <div class="map-panel-title">Traffic & Weather Zones</div>
+        <div class="map-zone-list" id="map-zones">
+          <div class="map-zone-empty">Start a ride to load live traffic and weather hotspots.</div>
+        </div>
+      </div>
+
+      <!-- Log -->
+      <div class="map-panel-title" style="padding:.75rem 1.1rem .25rem;margin:0;">Action Log</div>
+      <div class="map-log" id="map-log"><div style="color:var(--text3);">// Start a ride to see live actions...</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════════════════════ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+// ─── Page routing ───────────────────────────────
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  const tabs = { sim: 0, train: 1, qtable: 2, analytics: 3, map: 4 };
+  if (id === 'map') initMap();
+  document.querySelectorAll('.nav-tab')[tabs[id]].classList.add('active');
+  if (id === 'qtable') loadQTable();
+  if (id === 'analytics') loadAnalytics();
+}
+
+// ─── Constants ──────────────────────────────────
+const LOCS = [[0,0],[0,4],[4,0],[4,3]];
+const LOC_LABELS = ['R','G','Y','B'];
+const LOC_COLORS = ['#ef4444','#10b981','#f5c842','#3b82f6'];
+const ACTION_NAMES = ['South','North','East','West','Pickup','Drop-off'];
+
+// ─── State ──────────────────────────────────────
+let simRunning = false;
+let simInterval = null;
+let simSpeed = 350;
+let rideHistory = [];
+let visitedCells = new Set();
+let currentGridState = null;
+
+// ─── API helpers ────────────────────────────────
+async function api(path, opts = {}) {
+  try {
+    const r = await fetch(path, {
+      method: opts.method || 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    return await r.json();
+  } catch (e) {
+    console.error('API error', path, e);
+    return { error: e.message };
+  }
+}
+
+// ─── Hero grid (static) ──────────────────────────
+function initHeroGrid() {
+  const g = document.getElementById('hero-grid');
+  const taxi = [1,2], pickup = [0,0], drop = [4,3];
+  const traffic = [[0,.7,0,0,0],[0,0,0,.6,0],[0,0,0,0,0],[0,0,.5,0,0],[0,0,0,0,0]];
+  const weather = [[0,0,0,.6,0],[0,0,0,0,.4],[0,.5,0,0,0],[0,0,0,0,0],[.4,0,0,0,0]];
+  g.innerHTML = '';
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+    const cell = document.createElement('div');
+    cell.className = 'pcell';
+    if (r===taxi[0]&&c===taxi[1]) { cell.classList.add('taxi'); cell.textContent='🚕'; }
+    else if (r===pickup[0]&&c===pickup[1]) { cell.classList.add('pickup'); cell.textContent='R'; }
+    else if (r===drop[0]&&c===drop[1]) { cell.classList.add('dropoff'); cell.textContent='B'; }
+    else if (traffic[r][c]>.4) { cell.classList.add('traffic'); }
+    else if (weather[r][c]>.4) { cell.classList.add('weather'); }
+    const li = LOCS.findIndex(l=>l[0]===r&&l[1]===c);
+    if (li>=0&&!(r===taxi[0]&&c===taxi[1])&&!(r===pickup[0]&&c===pickup[1])) {
+      cell.textContent=LOC_LABELS[li]; cell.style.color=LOC_COLORS[li];
+    }
+    g.appendChild(cell);
+  }
+}
+
+// ─── Sim grid init ───────────────────────────────
+let simCells = [];
+function initSimGrid() {
+  const g = document.getElementById('sim-grid');
+  g.innerHTML = ''; simCells = [];
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+    const cell = document.createElement('div');
+    cell.className = 'scell';
+    g.appendChild(cell);
+    simCells.push({ el: cell, r, c });
+  }
+}
+
+function renderGrid(state) {
+  if (!state) return;
+  currentGridState = state;
+  const { taxi, pass_loc, pass_on_board, destination, locs, cells } = state;
+
+  simCells.forEach(({ el, r, c }) => {
+    el.className = 'scell';
+    el.textContent = '';
+    el.style.cssText = '';
+
+    const cell = cells.find(x => x.row===r && x.col===c);
+    if (cell) {
+      if (cell.traffic > 0.2) {
+        el.style.background = `rgba(239,68,68,${cell.traffic*0.1})`;
+        el.style.borderColor = `rgba(239,68,68,${cell.traffic*0.3})`;
+      }
+      if (cell.weather > 0.2 && cell.traffic <= 0.2) {
+        el.style.background = `rgba(139,92,246,${cell.weather*0.1})`;
+        el.style.borderColor = `rgba(139,92,246,${cell.weather*0.3})`;
+      }
+    }
+
+    const li = locs.findIndex(l => l.row===r && l.col===c);
+    if (li >= 0) {
+      const isPickup = li===pass_loc && !pass_on_board;
+      const isDrop = li===destination;
+      if (isDrop) { el.style.background='rgba(59,130,246,.1)'; el.style.borderColor='rgba(59,130,246,.45)'; }
+      if (isPickup) { el.style.background='rgba(16,185,129,.1)'; el.style.borderColor='rgba(16,185,129,.45)'; }
+      el.textContent = locs[li].label;
+      el.style.color = locs[li].color;
+      el.style.fontSize = '12px';
+    }
+
+    const key = `${r},${c}`;
+    if (visitedCells.has(key) && !(r===taxi.row && c===taxi.col)) {
+      el.style.background = 'rgba(245,200,66,.05)';
+      el.style.borderColor = 'rgba(245,200,66,.18)';
+    }
+
+    if (r===taxi.row && c===taxi.col) {
+      el.style.cssText = 'background:rgba(245,200,66,.18);border-color:var(--accent);box-shadow:0 0 12px rgba(245,200,66,.3);color:var(--accent);font-size:14px;';
+      el.textContent = pass_on_board ? '🚖' : '🚕';
+    }
+  });
+}
+
+function updateMetrics(data) {
+  const r = data.total_reward ?? currentGridState?.total_reward ?? 0;
+  const rEl = document.getElementById('m-reward');
+  rEl.textContent = typeof r === 'number' ? r.toFixed(1) : '—';
+  rEl.className = 'bnum ' + (r >= 0 ? 'pos' : 'neg');
+
+  const steps = data.steps ?? currentGridState?.steps ?? 0;
+  document.getElementById('m-steps').textContent = steps > 0 ? steps : '—';
+  document.getElementById('m-steps-sub').textContent = data.done ? 'Ride complete' : 'In progress...';
+  document.getElementById('step-ctr').textContent = `step ${steps}`;
+
+  const energy = data.energy ?? currentGridState?.energy ?? 100;
+  document.getElementById('m-energy').textContent = energy.toFixed(1);
+  document.getElementById('m-energy-fill').style.width = energy + '%';
+
+  if (data.sat_bonus !== undefined && data.done) {
+    const sat = data.sat_bonus;
+    document.getElementById('m-sat').textContent = sat.toFixed(1);
+    document.getElementById('m-sat').className = 'bnum ' + (sat > 10 ? 'pos' : sat > 0 ? 'neu' : 'neg');
+    document.getElementById('m-sat-fill').style.width = Math.min(100, Math.max(0, sat/20*100)) + '%';
+    document.getElementById('m-sat-sub').textContent = `Bonus applied`;
+  }
+}
+
+// ─── Log ────────────────────────────────────────
+function addLog(msg, type='') {
+  const p = document.getElementById('log-panel');
+  const d = document.createElement('div');
+  d.className = 'le' + (type ? ' '+type : '');
+  const steps = currentGridState?.steps ?? 0;
+  d.innerHTML = `<span class="lts">[${String(steps).padStart(3,'0')}]</span>${msg}`;
+  p.appendChild(d);
+  p.scrollTop = p.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('log-panel').innerHTML = '';
+}
+
+// ─── Simulation control ──────────────────────────
+async function newRide() {
+  stopSim();
+  visitedCells.clear();
+  const data = await api('/api/sim/new', { method: 'POST', body: {} });
+  if (data.error) return;
+  renderGrid(data.state);
+  clearLog();
+  addLog(data.message, 'lp');
+  setSimStatus('NEW RIDE', 'var(--accent2)');
+  document.getElementById('btn-run').textContent = '▶ START RIDE';
+  updateMetrics({ total_reward: 0, steps: 0, energy: data.state.energy ?? 100 });
+  document.getElementById('m-reward').textContent = '—';
+  document.getElementById('m-steps').textContent = '—';
+  document.getElementById('m-sat').textContent = '—';
+  document.getElementById('m-sat-fill').style.width = '0%';
+}
+
+async function doStep() {
+  const data = await api('/api/sim/step', { method: 'POST', body: {} });
+  if (data.error || !data.ok) { stopSim(); return; }
+
+  visitedCells.add(`${data.state.taxi.row},${data.state.taxi.col}`);
+  renderGrid(data.state);
+  updateMetrics(data);
+
+  let msg = data.action_name;
+  if (data.traffic_penalty > 0) msg += ` | Traffic -${data.traffic_penalty.toFixed(2)}`;
+  if (data.weather_penalty > 0) msg += ` | Weather -${data.weather_penalty.toFixed(2)}`;
+  msg += ` | r=${data.reward.toFixed(1)}`;
+  if (data.event === 'pickup') addLog(msg + ` ✓ Picked up ${data.pass_label}`, 'lp');
+  else if (data.event === 'dropoff') addLog(msg + ` ✓ Dropped at ${data.dest_label}`, 'ld');
+  else if (data.event.includes('illegal')) addLog(msg + ' ✗ illegal action', 'lx');
+  else if (data.event === 'energy_depleted') addLog(msg + ' ⚠ Energy depleted!', 'lx');
+  else addLog(msg);
+
+  if (data.done) {
+    stopSim();
+    setSimStatus('COMPLETE', 'var(--accent3)');
+    document.getElementById('btn-run').textContent = '▶ START RIDE';
+    rideHistory.push(data.total_reward);
+    renderRideHistory();
+    addLog(`✓ Ride done · Total reward: ${data.total_reward.toFixed(1)} · Satisfaction: ${data.sat_bonus.toFixed(1)}`, 'lr');
+  }
+}
+
+function toggleRun() {
+  if (simRunning) {
+    stopSim();
+    document.getElementById('btn-run').textContent = '▶ RESUME';
+    setSimStatus('PAUSED', 'var(--accent)');
+  } else {
+    simRunning = true;
+    document.getElementById('btn-run').textContent = '⏸ PAUSE';
+    setSimStatus('RUNNING', 'var(--accent3)');
+    simInterval = setInterval(doStep, simSpeed);
+  }
+}
+
+function stopSim() {
+  clearInterval(simInterval); simInterval = null; simRunning = false;
+}
+
+function resetSim() {
+  stopSim();
+  visitedCells.clear();
+  document.getElementById('btn-run').textContent = '▶ START RIDE';
+  setSimStatus('READY', 'var(--text2)');
+  clearLog();
+  addLog('// Reset · ready to simulate...', '');
+  if (currentGridState) {
+    currentGridState.taxi = { row: 0, col: 0 };
+    renderGrid(currentGridState);
+  }
+}
+
+function toggleSpeed() {
+  const btn = document.getElementById('btn-speed');
+  if (simSpeed === 350) {
+    simSpeed = 80; btn.textContent = '🐢 SLOW';
+    btn.className = 'cbtn cbtn-b';
+  } else {
+    simSpeed = 350; btn.textContent = '⚡ FAST';
+    btn.className = 'cbtn cbtn-n';
+  }
+  if (simRunning) { clearInterval(simInterval); simInterval = setInterval(doStep, simSpeed); }
+}
+
+async function runAuto() {
+  stopSim();
+  setSimStatus('AUTO-RUN', 'var(--accent5)');
+  clearLog();
+  const data = await api('/api/sim/auto', { method: 'POST', body: {} });
+  if (!data.ok) return;
+
+  addLog(`Auto-run · ${data.total_steps} steps · reward: ${data.total_reward.toFixed(1)}`, 'lr');
+  if (data.final_grid) {
+    // Replay path visually
+    const steps = data.steps;
+    let i = 0;
+    // Update visited
+    steps.forEach(s => visitedCells.add(`${s.taxi.row},${s.taxi.col}`));
+    renderGrid(data.final_grid);
+
+    function replayStep() {
+      if (i >= steps.length) {
+        rideHistory.push(data.total_reward);
+        renderRideHistory();
+        updateMetrics({ total_reward: data.total_reward, steps: data.total_steps, energy: data.energy, sat_bonus: data.sat_bonus, done: true });
+        setSimStatus('COMPLETE', 'var(--accent3)');
+        return;
+      }
+      const s = steps[i++];
+      let msg = s.action_name;
+      if (s.traffic_penalty > 0) msg += ` | Traffic -${s.traffic_penalty.toFixed(2)}`;
+      if (s.weather_penalty > 0) msg += ` | Weather -${s.weather_penalty.toFixed(2)}`;
+      msg += ` | r=${s.reward.toFixed(1)}`;
+      addLog(msg, s.event === 'pickup' ? 'lp' : s.event === 'dropoff' ? 'ld' : '');
+      setTimeout(replayStep, 30);
+    }
+    replayStep();
+  }
+}
+
+function setSimStatus(txt, color) {
+  const el = document.getElementById('sim-status-label');
+  el.textContent = txt; el.style.color = color;
+}
+
+function renderRideHistory() {
+  const wrap = document.getElementById('rbars');
+  wrap.innerHTML = '';
+  const h = rideHistory.slice(-12);
+  const max = Math.max(...h.map(Math.abs), 1);
+  h.forEach(v => {
+    const bar = document.createElement('div');
+    bar.className = 'rbar' + (v < 0 ? ' neg' : '');
+    bar.style.height = Math.max(4, Math.abs(v)/max*100) + '%';
+    bar.title = v.toFixed(1);
+    wrap.appendChild(bar);
+  });
+  const avg = rideHistory.length ? (rideHistory.reduce((a,b)=>a+b,0)/rideHistory.length).toFixed(1) : '—';
+  document.getElementById('m-history').textContent = `${rideHistory.length} ride${rideHistory.length!==1?'s':''} · avg ${avg}`;
+}
+
+// ─── Training ────────────────────────────────────
+let trainSSE = null;
+async function startTraining() {
+  const btn = document.getElementById('btn-train');
+  btn.disabled = true;
+  const log = document.getElementById('train-log');
+  log.innerHTML = '';
+
+  const body = {
+    episodes: +document.getElementById('f-episodes').value,
+    alpha: +document.getElementById('f-alpha').value,
+    gamma: +document.getElementById('f-gamma').value,
+    epsilon_decay: +document.getElementById('f-decay').value,
+    epsilon_min: +document.getElementById('f-emin').value,
+  };
+
+  const start = await api('/api/train', { method: 'POST', body });
+  if (start.error) { btn.disabled = false; return; }
+
+  log.innerHTML = `<div style="color:var(--accent3);">// Training started · ${body.episodes} episodes...</div>`;
+
+  if (trainSSE) trainSSE.close();
+  trainSSE = new EventSource('/api/train/stream');
+  trainSSE.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    document.getElementById('train-prog-fill').style.width = d.percent + '%';
+    document.getElementById('train-prog-pct').textContent = d.percent + '%';
+    document.getElementById('train-prog-lbl').textContent = `Episode ${d.episode} / ${d.total}  reward=${d.reward}`;
+    if (d.episode % 1000 === 0 || d.status === 'done') {
+      const line = document.createElement('div');
+      line.style.color = d.status==='done' ? 'var(--accent3)' : 'var(--text2)';
+      line.textContent = d.status==='done'
+        ? `✓ Training complete!`
+        : `  ep ${d.episode}/${d.total}  r=${d.reward}  ${d.percent}%`;
+      log.appendChild(line); log.scrollTop = log.scrollHeight;
+    }
+    if (d.status === 'done') {
+      trainSSE.close();
+      btn.disabled = false;
+      loadTrainStats();
+    }
+  };
+}
+
+async function loadTrainStats() {
+  const data = await api('/api/stats');
+  if (!data.ok || !data.trained) return;
+  const s = data.training_stats;
+  document.getElementById('ts-avg100').textContent = s.avg_reward_last_100;
+  document.getElementById('ts-avg').textContent = s.avg_reward_overall;
+  document.getElementById('ts-max').textContent = s.max_reward;
+  document.getElementById('train-stats').style.display = 'grid';
+  document.getElementById('sb-avg').textContent = s.avg_reward_last_100;
+  document.getElementById('sb-avg-sub').textContent = 'Last 100 episodes';
+  document.getElementById('nav-status').textContent = 'Model Trained';
+}
+
+// ─── Q-Table ─────────────────────────────────────
+async function loadQTable() {
+  const data = await api('/api/qtable?n=100');
+  if (!data.ok) return;
+  const hm = document.getElementById('qt-heatmap');
+  hm.innerHTML = '';
+  const vals = data.qtable.map(r => r.max_q);
+  const minV = Math.min(...vals), maxV = Math.max(...vals);
+  data.qtable.forEach((row, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'hm-cell';
+    const norm = maxV > minV ? (row.max_q - minV) / (maxV - minV) : 0.5;
+    const alpha = 0.08 + norm * 0.9;
+    cell.style.background = `rgba(245,200,66,${alpha.toFixed(2)})`;
+    cell.title = `State ${row.state} · max Q: ${row.max_q}`;
+    cell.onclick = () => showQDetail(row);
+    hm.appendChild(cell);
+  });
+}
+
+function showQDetail(row) {
+  const d = document.getElementById('qt-detail');
+  d.style.display = 'block';
+  document.getElementById('qt-detail-title').textContent =
+    `State ${row.state} · best action: ${ACTION_NAMES[row.best_action]} · max Q: ${row.max_q}`;
+  const bars = document.getElementById('qt-action-bars');
+  bars.innerHTML = '';
+  const max = Math.max(...row.q_values.map(Math.abs), 0.01);
+  row.q_values.forEach((v, i) => {
+    const col = document.createElement('div');
+    col.className = 'act-col';
+    const pct = Math.max(4, Math.abs(v)/max*100);
+    col.innerHTML = `
+      <div class="act-bar-wrap"><div class="act-bar${i===row.best_action?' best':''}" style="height:${pct}%"></div></div>
+      <div class="act-lbl">${ACTION_NAMES[i]}</div>
+      <div class="act-val">${v.toFixed(2)}</div>`;
+    bars.appendChild(col);
+  });
+}
+
+// ─── Analytics ───────────────────────────────────
+let rewardChart = null;
+async function loadAnalytics() {
+  const stats = await api('/api/stats');
+  if (stats.ok && stats.trained) {
+    const s = stats.training_stats;
+    document.getElementById('sb-avg').textContent = s.avg_reward_last_100;
+    // Draw reward curve
+    const hist = s.reward_history_sampled || [];
+    drawRewardCurve(hist);
+  }
+}
+
+function drawRewardCurve(data) {
+  const ctx = document.getElementById('reward-curve').getContext('2d');
+  if (rewardChart) rewardChart.destroy();
+  rewardChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.map((_, i) => i * Math.ceil(10000/data.length)),
+      datasets: [{
+        label: 'Episode Reward',
+        data,
+        borderColor: '#f5c842',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: true,
+        backgroundColor: 'rgba(245,200,66,0.07)',
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#4a5270', font: { family: 'Space Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color: '#4a5270', font: { family: 'Space Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+      }
+    }
+  });
+}
+
+async function runBenchmark() {
+  const data = await api('/api/benchmark', { method: 'POST', body: { n_rides: 20 } });
+  if (!data.ok) return;
+  const s = data.summary;
+  document.getElementById('ba-success').textContent = s.success_rate + '%';
+  document.getElementById('ba-avg').textContent = s.avg_reward;
+  document.getElementById('ba-steps').textContent = s.avg_steps;
+  document.getElementById('ba-max').textContent = s.max_reward;
+}
+
+// ─── Nav status check ───────────────────────────
+async function checkStatus() {
+  const data = await api('/api/train/status');
+  if (data.trained) {
+    document.getElementById('nav-status').textContent = 'Model Trained · ' + (data.stats?.avg_reward_last_100 ?? '') + ' avg';
+    if (data.stats?.avg_reward_last_100)
+      document.getElementById('sb-avg').textContent = data.stats.avg_reward_last_100;
+  } else if (data.status === 'running') {
+    document.getElementById('nav-status').textContent = `Training... ${data.percent}%`;
+  } else {
+    document.getElementById('nav-status').textContent = 'Not trained';
+  }
+}
+
+// ─── INIT ────────────────────────────────────────
+(async () => {
+  initHeroGrid();
+  initSimGrid();
+  await checkStatus();
+  await newRide();
+  setInterval(checkStatus, 5000);
+})();
+
+// ─── MAP (Leaflet + OpenStreetMap — Hyderabad) ────────────────────────────────
+let mapObj = null, mapInited = false;
+let taxiMarker = null, pickupMarker = null, dropMarker = null;
+let baseRoadLayer = null, hazardLayer = null, routeLayer = null, trailLayer = null;
+let mapRunning = false, mapInterval = null, mapSpeed = 700;
+let mapTrailCoords = [];
+let mapHazardCells = [];
+
+// Real Hyderabad coordinates for the 5×5 grid
+// Mapped across a bounding box: SW(17.33,78.42) → NE(17.47,78.52)
+const MAP_LAT_MIN = 17.330, MAP_LAT_MAX = 17.470;
+const MAP_LNG_MIN = 78.420, MAP_LNG_MAX = 78.520;
+
+// Named landmark locations (grid indices → real coords)
+const MAP_LOCS = [
+  { label:'R', name:'Charminar',          lat:17.3616, lng:78.4747, color:'#ef4444' },
+  { label:'G', name:'HITEC City',         lat:17.4435, lng:78.3772, color:'#10b981' },  // adjusted into grid
+  { label:'Y', name:'Secunderabad Stn',   lat:17.4399, lng:78.4983, color:'#f5c842' },
+  { label:'B', name:'Banjara Hills',      lat:17.4156, lng:78.4480, color:'#3b82f6' },
+];
+
+// Remap to fit in our bounding box
+const MAP_LOCS_ADJUSTED = [
+  { label:'R', name:'Charminar',         lat:17.361, lng:78.474, color:'#ef4444' },
+  { label:'G', name:'HITEC City',        lat:17.450, lng:78.381, color:'#10b981' },
+  { label:'Y', name:'Secunderabad',      lat:17.440, lng:78.500, color:'#f5c842' },
+  { label:'B', name:'Banjara Hills',     lat:17.416, lng:78.448, color:'#3b82f6' },
+];
+
+const ROAD_NODE_OFFSETS = [
+  [[ 0.0020,-0.0010],[ 0.0040, 0.0040],[ 0.0025, 0.0080],[ 0.0010, 0.0120],[ 0.0000, 0.0000]],
+  [[ 0.0040,-0.0030],[ 0.0020, 0.0010],[ 0.0010, 0.0060],[ 0.0020, 0.0100],[ 0.0030, 0.0130]],
+  [[ 0.0030,-0.0050],[ 0.0010,-0.0010],[ 0.0000, 0.0030],[-0.0010, 0.0070],[ 0.0010, 0.0100]],
+  [[ 0.0010,-0.0060],[-0.0010,-0.0030],[-0.0020, 0.0020],[-0.0010, 0.0050],[ 0.0000, 0.0080]],
+  [[ 0.0000, 0.0000],[-0.0030,-0.0040],[-0.0020, 0.0000],[ 0.0000, 0.0000],[ 0.0010, 0.0050]],
+];
+
+const MAP_CELL_NAMES = [
+  ['Charminar Gate','Afzal Gunj Link','Koti Corridor','Tank Bund Link','HITEC Entry'],
+  ['Nampally Spur','Lakdikapul Bend','Punjagutta Link','Jubilee Checkpost','Cyber Towers'],
+  ['Masab Tank','Somajiguda Route','Begumpet Spine','Paradise Stretch','Secunderabad East'],
+  ['Mehdipatnam Link','Banjara Connector','Ameerpet Merge','Panjagutta South','Trimulgherry Line'],
+  ['Old City South','Tolichowki Route','SR Nagar Curve','Banjara Hills','Airport Feeder'],
+];
+
+function gridToLatLng(row, col) {
+  // Uses slightly shifted nodes so the live map follows original route corridors instead of a visible square grid.
+  const baseLat = MAP_LAT_MAX - (row / 4) * (MAP_LAT_MAX - MAP_LAT_MIN);
+  const baseLng = MAP_LNG_MIN + (col / 4) * (MAP_LNG_MAX - MAP_LNG_MIN);
+  const [latOffset, lngOffset] = ROAD_NODE_OFFSETS[row][col];
+  let lat = baseLat + latOffset;
+  let lng = baseLng + lngOffset;
+
+  const locIndex = MAP_LOCS_ADJUSTED.findIndex((_, idx) => LOCS[idx][0] === row && LOCS[idx][1] === col);
+  if (locIndex >= 0) {
+    lat = MAP_LOCS_ADJUSTED[locIndex].lat;
+    lng = MAP_LOCS_ADJUSTED[locIndex].lng;
+  }
+  return [lat, lng];
+}
+
+function getSegmentMidpoint(start, end, bend = 0.18) {
+  const midLat = (start[0] + end[0]) / 2;
+  const midLng = (start[1] + end[1]) / 2;
+  const dx = end[1] - start[1];
+  const dy = end[0] - start[0];
+  return [midLat + (-dx * bend), midLng + (dy * bend)];
+}
+
+function drawBaseRoadNetwork() {
+  if (!mapObj) return;
+  if (baseRoadLayer) baseRoadLayer.clearLayers();
+
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 5; c++) {
+      const start = gridToLatLng(r, c);
+      if (c < 4) {
+        const east = gridToLatLng(r, c + 1);
+        const mid = getSegmentMidpoint(start, east, 0.14);
+        L.polyline([start, mid, east], {
+          color: 'rgba(148,163,184,.55)',
+          weight: 7,
+          opacity: 0.28,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(baseRoadLayer);
+        L.polyline([start, mid, east], {
+          color: 'rgba(245,200,66,.16)',
+          weight: 2.2,
+          opacity: 0.8,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(baseRoadLayer);
+      }
+      if (r < 4) {
+        const south = gridToLatLng(r + 1, c);
+        const mid = getSegmentMidpoint(start, south, -0.14);
+        L.polyline([start, mid, south], {
+          color: 'rgba(148,163,184,.5)',
+          weight: 7,
+          opacity: 0.24,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(baseRoadLayer);
+        L.polyline([start, mid, south], {
+          color: 'rgba(96,165,250,.14)',
+          weight: 2,
+          opacity: 0.8,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(baseRoadLayer);
+      }
+    }
+  }
+}
+
+function renderHazardZones(state) {
+  if (!mapObj || !hazardLayer) return;
+  hazardLayer.clearLayers();
+
+  const zoneList = document.getElementById('map-zones');
+  mapHazardCells = state?.cells || mapHazardCells || [];
+  const hotspots = mapHazardCells
+    .filter(cell => cell.traffic > 0.2 || cell.weather > 0.2)
+    .sort((a, b) => Math.max(b.traffic, b.weather) - Math.max(a.traffic, a.weather));
+
+  hotspots.forEach(cell => {
+    const [lat, lng] = gridToLatLng(cell.row, cell.col);
+    const severity = Math.max(cell.traffic, cell.weather);
+    if (cell.traffic > 0.2) {
+      L.circle([lat, lng], {
+        radius: 240 + (cell.traffic * 180),
+        color: '#ef4444',
+        weight: 1.4,
+        fillColor: '#ef4444',
+        fillOpacity: 0.16 + (cell.traffic * 0.12)
+      }).bindPopup(`<b>Traffic zone</b><br>${MAP_CELL_NAMES[cell.row][cell.col]}<br>Intensity: ${cell.traffic.toFixed(2)}`).addTo(hazardLayer);
+    }
+    if (cell.weather > 0.2) {
+      L.circle([lat, lng], {
+        radius: 210 + (cell.weather * 170),
+        color: '#8b5cf6',
+        weight: 1.4,
+        fillColor: '#8b5cf6',
+        fillOpacity: 0.14 + (cell.weather * 0.12)
+      }).bindPopup(`<b>Weather zone</b><br>${MAP_CELL_NAMES[cell.row][cell.col]}<br>Intensity: ${cell.weather.toFixed(2)}`).addTo(hazardLayer);
+    }
+    L.circleMarker([lat, lng], {
+      radius: 4 + (severity * 3),
+      color: '#f8fafc',
+      weight: 1,
+      fillColor: cell.traffic >= cell.weather ? '#ef4444' : '#8b5cf6',
+      fillOpacity: 0.85
+    }).addTo(hazardLayer);
+  });
+
+  if (!hotspots.length) {
+    zoneList.innerHTML = '<div class="map-zone-empty">No active traffic or weather hotspots for this ride.</div>';
+    return;
+  }
+
+  zoneList.innerHTML = hotspots.slice(0, 6).map(cell => {
+    const primaryType = cell.traffic >= cell.weather ? 'traffic' : 'weather';
+    const primaryValue = primaryType === 'traffic' ? cell.traffic : cell.weather;
+    return `
+      <div class="map-zone-item ${primaryType}">
+        <div class="map-zone-top">
+          <span>${primaryType} zone</span>
+          <span>${primaryValue.toFixed(2)}</span>
+        </div>
+        <div class="map-zone-name">${MAP_CELL_NAMES[cell.row][cell.col]}</div>
+        <div class="map-zone-meta">Traffic ${cell.traffic.toFixed(2)} · Weather ${cell.weather.toFixed(2)}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function redrawTrail(finalColor = null) {
+  if (!trailLayer) return;
+  trailLayer.clearLayers();
+  if (mapTrailCoords.length < 2) return;
+
+  L.polyline(mapTrailCoords, {
+    color: finalColor || '#f5c842',
+    weight: finalColor ? 4 : 3,
+    opacity: finalColor ? 0.82 : 0.65,
+    dashArray: finalColor ? null : '8 5',
+    lineCap: 'round',
+    lineJoin: 'round'
+  }).addTo(trailLayer);
+}
+
+function initMap() {
+  if (mapInited) return;
+  mapInited = true;
+
+  // Load Leaflet
+  const script = document.createElement('script');
+  script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  script.onload = () => {
+    mapObj = L.map('hyderabad-map', { zoomControl: true, attributionControl: true })
+      .setView([17.400, 78.450], 13);
+
+    // Dark tile layer from CartoDB
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '© OpenStreetMap contributors © CARTO',
+      subdomains: 'abcd', maxZoom: 19
+    }).addTo(mapObj);
+
+    // Add location markers
+    MAP_LOCS_ADJUSTED.forEach((loc, i) => {
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="background:${loc.color};color:#000;font-weight:700;font-size:11px;font-family:monospace;
+               width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+               border:2px solid rgba(255,255,255,.4);box-shadow:0 0 10px ${loc.color}88;">${loc.label}</div>`,
+        iconSize: [28, 28], iconAnchor: [14, 14],
+      });
+      L.marker([loc.lat, loc.lng], { icon })
+        .bindPopup(`<b style="color:${loc.color}">${loc.label} — ${loc.name}</b>`)
+        .addTo(mapObj);
+    });
+    baseRoadLayer = L.layerGroup().addTo(mapObj);
+    hazardLayer = L.layerGroup().addTo(mapObj);
+    trailLayer = L.layerGroup().addTo(mapObj);
+    drawBaseRoadNetwork();
+    mapNewRide();
+  };
+  document.head.appendChild(script);
+}
+
+function makeTaxiIcon(onBoard) {
+  return L.divIcon({
+    className: '',
+    html: `<div class="taxi-icon-wrap">${onBoard ? '🚖' : '🚕'}</div>`,
+    iconSize: [36, 36], iconAnchor: [18, 18],
+  });
+}
+
+function makePulseIcon(color, label) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="position:relative;width:36px;height:36px;">
+      <div class="pulse-ring" style="position:absolute;inset:0;background:${color};opacity:.3;"></div>
+      <div style="position:absolute;inset:6px;background:${color};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;">${label}</div>
+    </div>`,
+    iconSize: [36, 36], iconAnchor: [18, 18],
+  });
+}
+
+async function mapNewRide() {
+  mapStop();
+  mapTrailCoords = [];
+  if (trailLayer) trailLayer.clearLayers();
+  if (hazardLayer) hazardLayer.clearLayers();
+  if (routeLayer) { mapObj.removeLayer(routeLayer); routeLayer = null; }
+  document.getElementById('map-log').innerHTML = '';
+
+  const data = await api('/api/sim/new', { method: 'POST', body: {} });
+  if (!data.ok || !data.state) return;
+
+  const s = data.state;
+  const [tLat, tLng] = gridToLatLng(s.taxi.row, s.taxi.col);
+
+  if (taxiMarker) mapObj.removeLayer(taxiMarker);
+  taxiMarker = L.marker([tLat, tLng], { icon: makeTaxiIcon(false), zIndexOffset: 1000 }).addTo(mapObj);
+
+  // Pickup marker
+  const pickLoc = MAP_LOCS_ADJUSTED[s.pass_loc];
+  if (pickupMarker) mapObj.removeLayer(pickupMarker);
+  pickupMarker = L.marker([pickLoc.lat, pickLoc.lng], { icon: makePulseIcon(pickLoc.color, s.pass_label) })
+    .bindPopup(`<b>Pickup:</b> ${pickLoc.name}`).addTo(mapObj);
+
+  const dropLoc = MAP_LOCS_ADJUSTED[s.destination];
+  if (dropMarker) mapObj.removeLayer(dropMarker);
+  dropMarker = L.marker([dropLoc.lat, dropLoc.lng], { icon: makePulseIcon(dropLoc.color, s.dest_label) })
+    .bindPopup(`<b>Drop-off:</b> ${dropLoc.name}`).addTo(mapObj);
+
+  mapObj.setView([tLat, tLng], 13);
+  mapTrailCoords.push([tLat, tLng]);
+  mapHazardCells = s.cells || [];
+  renderHazardZones(s);
+  updateMapStats(s, {});
+  mapAddLog(`New ride · Pickup: ${pickLoc.name} (${s.pass_label}) → Drop: ${dropLoc.name} (${s.dest_label})`, 'pick');
+  document.getElementById('map-btn-run').textContent = '▶ START';
+  document.getElementById('mm-status').textContent = 'READY';
+}
+
+async function mapDoStep() {
+  const data = await api('/api/sim/step', { method: 'POST', body: {} });
+  if (!data.ok) { mapStop(); return; }
+
+  const s = data.state;
+  const [tLat, tLng] = gridToLatLng(s.taxi.row, s.taxi.col);
+
+  // Animate taxi marker
+  if (taxiMarker) {
+    taxiMarker.setLatLng([tLat, tLng]);
+    taxiMarker.setIcon(makeTaxiIcon(s.pass_on_board));
+  }
+  mapObj.panTo([tLat, tLng], { animate: true, duration: 0.4 });
+
+  mapTrailCoords.push([tLat, tLng]);
+  mapHazardCells = s.cells || mapHazardCells;
+  redrawTrail();
+  renderHazardZones(s);
+
+  // Update pickup/drop pulse on events
+  if (data.event === 'pickup' && pickupMarker) {
+    mapObj.removeLayer(pickupMarker); pickupMarker = null;
+    mapAddLog(`✓ Picked up at ${MAP_LOCS_ADJUSTED[s.pass_loc]?.name || data.pass_label}`, 'pick');
+  }
+  if (data.event === 'dropoff') {
+    mapAddLog(`✓ Dropped off at ${MAP_LOCS_ADJUSTED[s.destination]?.name || data.dest_label}`, 'drop');
+    if (dropMarker) { mapObj.removeLayer(dropMarker); dropMarker = null; }
+    redrawTrail('#10b981');
+  }
+  if (data.event === 'energy_depleted') mapAddLog('⚠ Energy depleted!', 'warn');
+
+  let msg = data.action_name;
+  if (data.traffic_penalty > 0) msg += ` | 🚦 -${data.traffic_penalty.toFixed(1)}`;
+  if (data.weather_penalty > 0) msg += ` | 🌧 -${data.weather_penalty.toFixed(1)}`;
+  msg += ` r=${data.reward.toFixed(1)}`;
+  if (!['pickup','dropoff'].includes(data.event)) mapAddLog(msg);
+
+  updateMapStats(s, data);
+
+  if (data.done) {
+    mapStop();
+    document.getElementById('mm-status').textContent = 'DONE';
+    document.getElementById('mm-status').style.color = 'var(--accent3)';
+    document.getElementById('map-btn-run').textContent = '▶ START';
+    mapAddLog(`✓ Ride complete · reward: ${data.total_reward.toFixed(1)}`, 'drop');
+  }
+}
+
+function updateMapStats(state, data) {
+  document.getElementById('mm-reward').textContent = typeof data.total_reward === 'number' ? data.total_reward.toFixed(1) : (state.total_reward ?? 0).toFixed(1);
+  document.getElementById('mm-steps').textContent = state.steps ?? '—';
+  const energy = data.energy ?? state.energy ?? 100;
+  document.getElementById('mm-energy').textContent = energy.toFixed(1);
+  document.getElementById('mm-energy-bar').style.width = Math.max(0, energy) + '%';
+}
+
+function mapAddLog(msg, type='') {
+  const log = document.getElementById('map-log');
+  const d = document.createElement('div');
+  d.className = 'map-log-entry' + (type ? ' '+type : '');
+  d.textContent = msg;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+function mapToggleRun() {
+  if (mapRunning) {
+    mapStop();
+    document.getElementById('map-btn-run').textContent = '▶ RESUME';
+    document.getElementById('mm-status').textContent = 'PAUSED';
+  } else {
+    mapRunning = true;
+    document.getElementById('map-btn-run').textContent = '⏸ PAUSE';
+    document.getElementById('mm-status').textContent = 'RUNNING';
+    document.getElementById('mm-status').style.color = 'var(--accent3)';
+    mapInterval = setInterval(mapDoStep, mapSpeed);
+  }
+}
+
+function mapStop() {
+  clearInterval(mapInterval); mapInterval = null; mapRunning = false;
+}
+
+function mapToggleSpeed() {
+  const btn = document.getElementById('map-btn-speed');
+  if (mapSpeed === 700) {
+    mapSpeed = 200; btn.textContent = '🐢 SLOW'; btn.className = 'cbtn cbtn-b';
+  } else {
+    mapSpeed = 700; btn.textContent = '⚡ FAST'; btn.className = 'cbtn cbtn-n';
+  }
+  if (mapRunning) { clearInterval(mapInterval); mapInterval = setInterval(mapDoStep, mapSpeed); }
+}
+
+async function mapAutoRun() {
+  mapStop();
+  document.getElementById('mm-status').textContent = 'AUTO';
+  const data = await api('/api/sim/auto', { method: 'POST', body: {} });
+  if (!data.ok || !data.steps) return;
+
+  // Replay all steps with animation
+  let i = 0;
+  mapTrailCoords = [];
+  mapHazardCells = data.final_grid?.cells || mapHazardCells;
+  if (trailLayer) trailLayer.clearLayers();
+  document.getElementById('map-log').innerHTML = '';
+
+  function replayNext() {
+    if (i >= data.steps.length) {
+      document.getElementById('mm-status').textContent = 'DONE';
+      document.getElementById('mm-status').style.color = 'var(--accent3)';
+      redrawTrail('#10b981');
+      mapAddLog(`✓ Auto-run complete · ${data.total_steps} steps · reward: ${data.total_reward.toFixed(1)}`, 'drop');
+      return;
+    }
+    const step = data.steps[i++];
+    const [lat, lng] = gridToLatLng(step.taxi.row, step.taxi.col);
+    mapTrailCoords.push([lat, lng]);
+
+    if (taxiMarker) taxiMarker.setLatLng([lat, lng]);
+    mapObj.panTo([lat, lng], { animate: true, duration: 0.2 });
+    redrawTrail();
+    renderHazardZones({ cells: mapHazardCells });
+
+    document.getElementById('mm-steps').textContent = step.step;
+    document.getElementById('mm-reward').textContent = step.total_reward.toFixed(1);
+    const e = step.energy ?? 100;
+    document.getElementById('mm-energy').textContent = e.toFixed(1);
+    document.getElementById('mm-energy-bar').style.width = Math.max(0, e) + '%';
+    let msg = step.action_name;
+    if (step.traffic_penalty > 0) msg += ` | Traffic -${step.traffic_penalty.toFixed(1)}`;
+    if (step.weather_penalty > 0) msg += ` | Weather -${step.weather_penalty.toFixed(1)}`;
+    mapAddLog(msg);
+
+    setTimeout(replayNext, 120);
+  }
+  replayNext();
+}
+
+</script>
