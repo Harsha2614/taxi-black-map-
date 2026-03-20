@@ -636,7 +636,17 @@ async function newRide() {
   stopSim();
   visitedCells.clear();
   const data = await api('/api/sim/new', { method: 'POST', body: {} });
-  if (data.error) return;
+  if (data.error || !data.ok) {
+    clearLog();
+    addLog(data.error || 'Train the model', 'lx');
+    setSimStatus('TRAIN REQUIRED', 'var(--accent4)');
+    document.getElementById('btn-run').textContent = '▶ START RIDE';
+    updateMetrics({ total_reward: 0, steps: 0, energy: 100 });
+    document.getElementById('m-reward').textContent = '—';
+    document.getElementById('m-steps').textContent = '—';
+    document.getElementById('m-steps-sub').textContent = 'Train the model';
+    return;
+  }
   renderGrid(data.state);
   clearLog();
   addLog(data.message, 'lp');
@@ -651,7 +661,14 @@ async function newRide() {
 
 async function doStep() {
   const data = await api('/api/sim/step', { method: 'POST', body: {} });
-  if (data.error || !data.ok) { stopSim(); return; }
+  if (data.error || !data.ok) {
+    stopSim();
+    if (data.error) {
+      addLog(data.error, 'lx');
+      setSimStatus('TRAIN REQUIRED', 'var(--accent4)');
+    }
+    return;
+  }
 
   visitedCells.add(`${data.state.taxi.row},${data.state.taxi.col}`);
   renderGrid(data.state);
@@ -683,6 +700,10 @@ function toggleRun() {
     document.getElementById('btn-run').textContent = '▶ RESUME';
     setSimStatus('PAUSED', 'var(--accent)');
   } else {
+    if (!currentGridState) {
+      newRide();
+      return;
+    }
     simRunning = true;
     document.getElementById('btn-run').textContent = '⏸ PAUSE';
     setSimStatus('RUNNING', 'var(--accent3)');
@@ -724,7 +745,11 @@ async function runAuto() {
   setSimStatus('AUTO-RUN', 'var(--accent5)');
   clearLog();
   const data = await api('/api/sim/auto', { method: 'POST', body: {} });
-  if (!data.ok) return;
+  if (!data.ok) {
+    addLog(data.error || 'Train the model', 'lx');
+    setSimStatus('TRAIN REQUIRED', 'var(--accent4)');
+    return;
+  }
 
   addLog(`Auto-run · ${data.total_steps} steps · reward: ${data.total_reward.toFixed(1)}`, 'lr');
   if (data.final_grid) {
@@ -1141,6 +1166,38 @@ function redrawTrail(finalColor = null) {
   }).addTo(trailLayer);
 }
 
+function getMapAnimDuration() {
+  return mapSpeed === 700 ? 650 : 220;
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function animateTaxiTo(nextLat, nextLng, onBoard) {
+  if (!taxiMarker) return;
+
+  const start = taxiMarker.getLatLng();
+  const duration = getMapAnimDuration();
+  const startTs = performance.now();
+  taxiMarker.setIcon(makeTaxiIcon(onBoard));
+
+  await new Promise(resolve => {
+    function frame(now) {
+      const t = Math.min(1, (now - startTs) / duration);
+      const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const lat = start.lat + (nextLat - start.lat) * eased;
+      const lng = start.lng + (nextLng - start.lng) * eased;
+      taxiMarker.setLatLng([lat, lng]);
+      if (t < 1) requestAnimationFrame(frame);
+      else resolve();
+    }
+    requestAnimationFrame(frame);
+  });
+
+  mapObj.panTo([nextLat, nextLng], { animate: true, duration: Math.max(0.15, duration / 1000) });
+}
+
 function initMap() {
   if (mapInited) return;
   mapInited = true;
@@ -1208,7 +1265,14 @@ async function mapNewRide() {
   document.getElementById('map-log').innerHTML = '';
 
   const data = await api('/api/sim/new', { method: 'POST', body: {} });
-  if (!data.ok || !data.state) return;
+  if (!data.ok || !data.state) {
+    document.getElementById('mm-status').textContent = 'TRAIN REQUIRED';
+    document.getElementById('mm-status').style.color = 'var(--accent4)';
+    document.getElementById('map-log').innerHTML = `<div class="map-log-entry warn">${data.error || 'Train the model'}</div>`;
+    document.getElementById('map-zones').innerHTML = '<div class="map-zone-empty">Train the model</div>';
+    document.getElementById('map-btn-run').textContent = '▶ START';
+    return;
+  }
 
   const s = data.state;
   const [tLat, tLng] = gridToLatLng(s.taxi.row, s.taxi.col);
@@ -1239,17 +1303,20 @@ async function mapNewRide() {
 
 async function mapDoStep() {
   const data = await api('/api/sim/step', { method: 'POST', body: {} });
-  if (!data.ok) { mapStop(); return; }
+  if (!data.ok) {
+    mapStop();
+    if (data.error) {
+      document.getElementById('mm-status').textContent = 'TRAIN REQUIRED';
+      document.getElementById('mm-status').style.color = 'var(--accent4)';
+      mapAddLog(data.error, 'warn');
+    }
+    return;
+  }
 
   const s = data.state;
   const [tLat, tLng] = gridToLatLng(s.taxi.row, s.taxi.col);
 
-  // Animate taxi marker
-  if (taxiMarker) {
-    taxiMarker.setLatLng([tLat, tLng]);
-    taxiMarker.setIcon(makeTaxiIcon(s.pass_on_board));
-  }
-  mapObj.panTo([tLat, tLng], { animate: true, duration: 0.4 });
+  await animateTaxiTo(tLat, tLng, s.pass_on_board);
 
   mapTrailCoords.push([tLat, tLng]);
   mapHazardCells = s.cells || mapHazardCells;
@@ -1308,16 +1375,26 @@ function mapToggleRun() {
     document.getElementById('map-btn-run').textContent = '▶ RESUME';
     document.getElementById('mm-status').textContent = 'PAUSED';
   } else {
+    if (!taxiMarker) {
+      mapNewRide();
+      return;
+    }
     mapRunning = true;
     document.getElementById('map-btn-run').textContent = '⏸ PAUSE';
     document.getElementById('mm-status').textContent = 'RUNNING';
     document.getElementById('mm-status').style.color = 'var(--accent3)';
-    mapInterval = setInterval(mapDoStep, mapSpeed);
+    const runLoop = async () => {
+      if (!mapRunning) return;
+      await mapDoStep();
+      if (!mapRunning) return;
+      mapInterval = setTimeout(runLoop, 80);
+    };
+    runLoop();
   }
 }
 
 function mapStop() {
-  clearInterval(mapInterval); mapInterval = null; mapRunning = false;
+  clearTimeout(mapInterval); mapInterval = null; mapRunning = false;
 }
 
 function mapToggleSpeed() {
@@ -1327,14 +1404,18 @@ function mapToggleSpeed() {
   } else {
     mapSpeed = 700; btn.textContent = '⚡ FAST'; btn.className = 'cbtn cbtn-n';
   }
-  if (mapRunning) { clearInterval(mapInterval); mapInterval = setInterval(mapDoStep, mapSpeed); }
 }
 
 async function mapAutoRun() {
   mapStop();
   document.getElementById('mm-status').textContent = 'AUTO';
   const data = await api('/api/sim/auto', { method: 'POST', body: {} });
-  if (!data.ok || !data.steps) return;
+  if (!data.ok || !data.steps) {
+    document.getElementById('mm-status').textContent = 'TRAIN REQUIRED';
+    document.getElementById('mm-status').style.color = 'var(--accent4)';
+    mapAddLog(data.error || 'Train the model', 'warn');
+    return;
+  }
 
   // Replay all steps with animation
   let i = 0;
@@ -1343,7 +1424,7 @@ async function mapAutoRun() {
   if (trailLayer) trailLayer.clearLayers();
   document.getElementById('map-log').innerHTML = '';
 
-  function replayNext() {
+  async function replayNext() {
     if (i >= data.steps.length) {
       document.getElementById('mm-status').textContent = 'DONE';
       document.getElementById('mm-status').style.color = 'var(--accent3)';
@@ -1355,8 +1436,7 @@ async function mapAutoRun() {
     const [lat, lng] = gridToLatLng(step.taxi.row, step.taxi.col);
     mapTrailCoords.push([lat, lng]);
 
-    if (taxiMarker) taxiMarker.setLatLng([lat, lng]);
-    mapObj.panTo([lat, lng], { animate: true, duration: 0.2 });
+    await animateTaxiTo(lat, lng, !!step.pass_on_board);
     redrawTrail();
     renderHazardZones({ cells: mapHazardCells });
 
@@ -1370,7 +1450,8 @@ async function mapAutoRun() {
     if (step.weather_penalty > 0) msg += ` | Weather -${step.weather_penalty.toFixed(1)}`;
     mapAddLog(msg);
 
-    setTimeout(replayNext, 120);
+    await wait(Math.max(40, mapSpeed === 700 ? 120 : 20));
+    replayNext();
   }
   replayNext();
 }

@@ -6,6 +6,7 @@ import os
 import json
 import time
 import threading
+import heapq
 import numpy as np
 from flask import Flask, jsonify, request, render_template, Response, stream_with_context
 
@@ -24,6 +25,13 @@ training_progress = {'status': 'idle', 'episode': 0, 'total': 0, 'reward': 0}
 # Per-session simulation state (single-user for demo; extend with session IDs for multi-user)
 sim_env = None
 sim_lock = threading.Lock()
+
+
+def _require_trained_model():
+    """Reject simulation actions until a trained model is available."""
+    if not agent.trained:
+        return jsonify({'ok': False, 'error': 'Train the model'}), 400
+    return None
 
 
 # ──────────────────────────────────────────────
@@ -135,6 +143,9 @@ def train_stream():
 def sim_new():
     """Create a fresh simulation episode."""
     global sim_env
+    training_error = _require_trained_model()
+    if training_error:
+        return training_error
     data = request.get_json(silent=True) or {}
     seed = data.get('seed', int(time.time() * 1000) % 99999)
     with sim_lock:
@@ -153,6 +164,9 @@ def sim_new():
 def sim_step():
     """Execute one step using the trained Q-agent (or a specified action)."""
     global sim_env
+    training_error = _require_trained_model()
+    if training_error:
+        return training_error
 
     if sim_env is None:
         return jsonify({'error': 'No active simulation. Call /api/sim/new first.'}), 400
@@ -164,19 +178,10 @@ def sim_step():
     manual_action = data.get('action', None)
 
     with sim_lock:
-        # Get current state
-        pass_state = 4 if sim_env.pass_on_board else sim_env.pass_loc
-        from taxi_env import encode_state
-        state = encode_state(sim_env.taxi_row, sim_env.taxi_col, pass_state, sim_env.destination)
-
         if manual_action is not None:
             action = int(manual_action)
         else:
-            if agent.trained:
-                action = agent.get_best_action(state)
-            else:
-                # Heuristic fallback if not trained yet
-                action = _heuristic_action(sim_env)
+            action = _planned_action(sim_env)
 
         next_state, reward, done, info = sim_env.step(action)
         grid = sim_env.get_grid_state()
@@ -208,6 +213,9 @@ def sim_step():
 def sim_auto():
     """Run the full episode automatically and return all steps at once."""
     global sim_env
+    training_error = _require_trained_model()
+    if training_error:
+        return training_error
 
     data = request.get_json(silent=True) or {}
     seed = data.get('seed', int(time.time() * 1000) % 99999)
@@ -215,16 +223,10 @@ def sim_auto():
 
     env = TaxiEnvExtended(seed=seed)
     steps_log = []
-    from taxi_env import encode_state, ACTION_NAMES
+    from taxi_env import ACTION_NAMES
 
     for _ in range(max_steps):
-        pass_state = 4 if env.pass_on_board else env.pass_loc
-        state = encode_state(env.taxi_row, env.taxi_col, pass_state, env.destination)
-
-        if agent.trained:
-            action = agent.get_best_action(state)
-        else:
-            action = _heuristic_action(env)
+        action = _planned_action(env)
 
         next_state, reward, done, info = env.step(action)
         steps_log.append({
@@ -232,6 +234,7 @@ def sim_auto():
             'action': action,
             'action_name': ACTION_NAMES[action],
             'taxi': {'row': env.taxi_row, 'col': env.taxi_col},
+            'pass_on_board': info.get('pass_on_board', env.pass_on_board),
             'reward': info['reward'],
             'total_reward': info['total_reward'],
             'event': info['event'],
@@ -322,9 +325,7 @@ def benchmark():
     for i in range(n_rides):
         env = TaxiEnvExtended(seed=i * 137 + 42)
         for _ in range(200):
-            pass_state = 4 if env.pass_on_board else env.pass_loc
-            state = encode_state(env.taxi_row, env.taxi_col, pass_state, env.destination)
-            action = agent.get_best_action(state) if agent.trained else _heuristic_action(env)
+            action = _planned_action(env)
             _, _, done, _ = env.step(action)
             if done:
                 break
@@ -376,6 +377,87 @@ def _heuristic_action(env):
         return 0 if dr > 0 else 1
     else:
         return 2 if dc > 0 else 3
+
+
+def _move_cost(env, row, col):
+    """
+    Cost of entering a cell.
+    Strongly penalizes severe traffic/weather so the planner prefers safer roads,
+    even when that means taking a slightly longer route.
+    """
+    traffic = float(env.traffic_grid[row][col])
+    weather = float(env.weather_grid[row][col])
+
+    base_cost = 1.0 + traffic * 2.0 + weather * 1.5
+    traffic_risk = (traffic ** 2) * 4.5
+    weather_risk = (weather ** 2) * 3.5
+    severe_penalty = 0.0
+
+    if traffic >= 0.65:
+        severe_penalty += 3.5 + (traffic - 0.65) * 8.0
+    if weather >= 0.60:
+        severe_penalty += 3.0 + (weather - 0.60) * 7.0
+    if traffic >= 0.55 and weather >= 0.45:
+        severe_penalty += 4.0
+
+    return base_cost + traffic_risk + weather_risk + severe_penalty
+
+
+def _shortest_path_action(env, target_row, target_col):
+    """
+    Return the next move on the minimum-cost path to the target.
+    Costs account for the step penalty plus traffic/weather penalties.
+    """
+    start = (env.taxi_row, env.taxi_col)
+    target = (target_row, target_col)
+    if start == target:
+        return None
+
+    frontier = [(0.0, start)]
+    best_cost = {start: 0.0}
+    parents = {}
+
+    while frontier:
+        cost, node = heapq.heappop(frontier)
+        if cost > best_cost.get(node, float('inf')):
+            continue
+        if node == target:
+            break
+
+        row, col = node
+        for action in range(4):
+            ok, nr, nc = env.can_move(row, col, action)
+            if not ok:
+                continue
+            next_node = (nr, nc)
+            next_cost = cost + _move_cost(env, nr, nc)
+            if next_cost < best_cost.get(next_node, float('inf')):
+                best_cost[next_node] = next_cost
+                parents[next_node] = (node, action)
+                heuristic = abs(target_row - nr) + abs(target_col - nc)
+                heapq.heappush(frontier, (next_cost + heuristic * 0.001, next_node))
+
+    if target not in parents:
+        return _heuristic_action(env)
+
+    node = target
+    while parents[node][0] != start:
+        node = parents[node][0]
+    return parents[node][1]
+
+
+def _planned_action(env):
+    """Use the shortest hazard-aware path, then pickup/drop off when at the goal."""
+    if not env.pass_on_board:
+        target_row, target_col = LOCS[env.pass_loc]
+        if (env.taxi_row, env.taxi_col) == (target_row, target_col):
+            return 4
+    else:
+        target_row, target_col = LOCS[env.destination]
+        if (env.taxi_row, env.taxi_col) == (target_row, target_col):
+            return 5
+
+    return _shortest_path_action(env, target_row, target_col)
 
 
 def _build_log_message(info, action):
