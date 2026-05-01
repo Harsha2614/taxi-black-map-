@@ -87,6 +87,10 @@ h1 .hl{color:var(--accent);}
 
 /* ── CONTROLS ── */
 .ctrl-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:.85rem;}
+.ride-choice-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:.85rem;}
+.ride-choice-field{display:flex;flex-direction:column;gap:5px;min-width:0;}
+.ride-choice-field label{font-family:var(--font-mono);font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;}
+.ride-choice-field select{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:7px 8px;font-family:var(--font-body);font-size:12px;min-width:0;}
 .cbtn{padding:6px 13px;border-radius:5px;font-size:11px;font-family:var(--font-mono);cursor:pointer;border:1px solid;transition:all .2s;}
 .cbtn-y{background:rgba(245,200,66,.12);border-color:var(--accent);color:var(--accent);}
 .cbtn-y:hover{background:rgba(245,200,66,.22);}
@@ -233,6 +237,30 @@ h1 .hl{color:var(--accent);}
       </div>
       <div class="card-body">
         <div class="sim-grid" id="sim-grid"></div>
+        <div class="ride-choice-row">
+          <div class="ride-choice-field">
+            <label for="sim-pickup">Pickup</label>
+            <select id="sim-pickup" onchange="syncRideSelectors('sim')">
+              <option value="0">R - Charminar</option>
+              <option value="1">G - HITEC City</option>
+              <option value="2">Y - Secunderabad</option>
+              <option value="3">B - Banjara Hills</option>
+              <option value="4">P - Punjagutta</option>
+              <option value="5">O - Lakdikapul</option>
+            </select>
+          </div>
+          <div class="ride-choice-field">
+            <label for="sim-dropoff">Drop-off</label>
+            <select id="sim-dropoff" onchange="syncRideSelectors('sim')">
+              <option value="0">R - Charminar</option>
+              <option value="1" selected>G - HITEC City</option>
+              <option value="2">Y - Secunderabad</option>
+              <option value="3">B - Banjara Hills</option>
+              <option value="4">P - Punjagutta</option>
+              <option value="5">O - Lakdikapul</option>
+            </select>
+          </div>
+        </div>
         <div class="ctrl-row">
           <button class="cbtn cbtn-y" id="btn-run" onclick="toggleRun()">▶ START RIDE</button>
           <button class="cbtn cbtn-n" onclick="resetSim()">⟳ RESET</button>
@@ -468,7 +496,33 @@ h1 .hl{color:var(--accent);}
       <!-- Controls -->
       <div class="map-panel">
         <div class="map-panel-title">Controls</div>
+        <div class="ride-choice-row" style="margin-top:0;margin-bottom:.75rem;">
+          <div class="ride-choice-field">
+            <label for="map-pickup">Pickup</label>
+            <select id="map-pickup" onchange="syncRideSelectors('map')">
+              <option value="0">R - Charminar</option>
+              <option value="1">G - HITEC City</option>
+              <option value="2">Y - Secunderabad</option>
+              <option value="3">B - Banjara Hills</option>
+              <option value="4">P - Punjagutta</option>
+              <option value="5">O - Lakdikapul</option>
+            </select>
+          </div>
+          <div class="ride-choice-field">
+            <label for="map-dropoff">Drop-off</label>
+            <select id="map-dropoff" onchange="syncRideSelectors('map')">
+              <option value="0">R - Charminar</option>
+              <option value="1" selected>G - HITEC City</option>
+              <option value="2">Y - Secunderabad</option>
+              <option value="3">B - Banjara Hills</option>
+              <option value="4">P - Punjagutta</option>
+              <option value="5">O - Lakdikapul</option>
+            </select>
+          </div>
+        </div>
         <div class="map-ctrl-row">
+          <button class="cbtn cbtn-g" id="map-pick-mode" onclick="setMapPickMode('pickup')">SET PICKUP</button>
+          <button class="cbtn cbtn-b" id="map-drop-mode" onclick="setMapPickMode('dropoff')">SET DROP-OFF</button>
           <button class="cbtn cbtn-y" id="map-btn-run" onclick="mapToggleRun()">▶ START</button>
           <button class="cbtn cbtn-n" onclick="mapNewRide()">↻ NEW RIDE</button>
           <button class="cbtn cbtn-n" onclick="mapNewRide(true)">LIVE RIDE</button>
@@ -542,6 +596,45 @@ const LOCS = [[0,0],[0,4],[4,0],[4,3],[2,2],[1,1]];
 const LOC_LABELS = ['R','G','Y','B','P','O'];
 const LOC_COLORS = ['#ef4444','#10b981','#f5c842','#3b82f6','#f97316','#a855f7'];
 const ACTION_NAMES = ['South','North','East','West','Pickup','Drop-off'];
+const RIDE_SELECT_IDS = {
+  sim: ['sim-pickup', 'sim-dropoff'],
+  map: ['map-pickup', 'map-dropoff'],
+};
+
+function syncRideSelectors(source) {
+  const ids = RIDE_SELECT_IDS[source];
+  if (!ids) return;
+  const pickup = document.getElementById(ids[0])?.value;
+  const dropoff = document.getElementById(ids[1])?.value;
+  Object.entries(RIDE_SELECT_IDS).forEach(([key, pair]) => {
+    if (key === source) return;
+    const pickEl = document.getElementById(pair[0]);
+    const dropEl = document.getElementById(pair[1]);
+    if (pickEl && pickup !== undefined) pickEl.value = pickup;
+    if (dropEl && dropoff !== undefined) dropEl.value = dropoff;
+  });
+  if (source === 'map') {
+    refreshMapSelectionMarkers();
+    const pickLoc = MAP_LOCS_ADJUSTED[Number(pickup)];
+    const dropLoc = MAP_LOCS_ADJUSTED[Number(dropoff)];
+    if (pickLoc && dropLoc) {
+      mapAddLog(`Ride endpoints selected: pickup ${pickLoc.label} - ${pickLoc.name}, drop-off ${dropLoc.label} - ${dropLoc.name}.`, 'pick');
+    }
+  }
+}
+
+function rideChoicePayload(source, live = false) {
+  const ids = RIDE_SELECT_IDS[source] || RIDE_SELECT_IDS.sim;
+  const pickup = Number(document.getElementById(ids[0])?.value ?? 0);
+  const dropoff = Number(document.getElementById(ids[1])?.value ?? 1);
+  if (pickup === dropoff) {
+    const msg = 'Choose different pickup and drop-off points.';
+    if (source === 'map') mapAddLog(msg, 'warn');
+    else addLog(msg, 'lx');
+    return null;
+  }
+  return { live, pickup, dropoff };
+}
 
 // ─── State ──────────────────────────────────────
 let simRunning = false;
@@ -691,7 +784,9 @@ function clearLog() {
 async function newRide(live = false) {
   stopSim();
   visitedCells.clear();
-  const data = await api('/api/sim/new', { method: 'POST', body: live ? { live: true } : {} });
+  const body = rideChoicePayload('sim', live);
+  if (!body) return;
+  const data = await api('/api/sim/new', { method: 'POST', body });
   if (data.error || !data.ok) {
     clearLog();
     addLog(data.error || 'Train the model', 'lx');
@@ -798,7 +893,9 @@ async function runAuto() {
   stopSim();
   setSimStatus('AUTO-RUN', 'var(--accent5)');
   clearLog();
-  const data = await api('/api/sim/auto', { method: 'POST', body: {} });
+  const body = rideChoicePayload('sim', false);
+  if (!body) return;
+  const data = await api('/api/sim/auto', { method: 'POST', body });
   if (!data.ok) {
     addLog(data.error || 'Train the model', 'lx');
     setSimStatus('TRAIN REQUIRED', 'var(--accent4)');
@@ -1035,6 +1132,7 @@ let mapRunning = false, mapInterval = null, mapSpeed = 700;
 let mapTrailCoords = [];
 let mapHazardCells = [];
 let mapCellCoords = {};
+let mapPickMode = 'pickup';
 
 // Real Hyderabad coordinates for the 5×5 grid
 // Mapped across a bounding box: SW(17.33,78.42) → NE(17.47,78.52)
@@ -1103,6 +1201,59 @@ function syncMapCellCoords(state) {
       mapCellCoords[`${cell.row},${cell.col}`] = [cell.lat, cell.lng];
     }
   });
+}
+
+function setMapPickMode(mode) {
+  mapPickMode = mode === 'dropoff' ? 'dropoff' : 'pickup';
+  const pickBtn = document.getElementById('map-pick-mode');
+  const dropBtn = document.getElementById('map-drop-mode');
+  if (pickBtn) pickBtn.className = mapPickMode === 'pickup' ? 'cbtn cbtn-g' : 'cbtn cbtn-n';
+  if (dropBtn) dropBtn.className = mapPickMode === 'dropoff' ? 'cbtn cbtn-b' : 'cbtn cbtn-n';
+  const label = mapPickMode === 'pickup' ? 'pickup' : 'drop-off';
+  mapAddLog(`Map pointer armed: click a landmark to set ${label}.`, mapPickMode === 'pickup' ? 'pick' : 'drop');
+}
+
+function setRideChoiceFromMap(index) {
+  const otherId = mapPickMode === 'pickup' ? 'map-dropoff' : 'map-pickup';
+  const targetId = mapPickMode === 'pickup' ? 'map-pickup' : 'map-dropoff';
+  const target = document.getElementById(targetId);
+  const other = document.getElementById(otherId);
+  if (!target || !other) return;
+  if (String(index) === other.value) {
+    mapAddLog('Pickup and drop-off must be different.', 'warn');
+    return;
+  }
+  target.value = String(index);
+  syncRideSelectors('map');
+  refreshMapSelectionMarkers();
+  const loc = MAP_LOCS_ADJUSTED[index];
+  const label = mapPickMode === 'pickup' ? 'Pickup' : 'Drop-off';
+  mapAddLog(`${label} location set to ${loc.label} - ${loc.name}.`, mapPickMode === 'pickup' ? 'pick' : 'drop');
+  mapPickMode = mapPickMode === 'pickup' ? 'dropoff' : 'pickup';
+  const pickBtn = document.getElementById('map-pick-mode');
+  const dropBtn = document.getElementById('map-drop-mode');
+  if (pickBtn) pickBtn.className = mapPickMode === 'pickup' ? 'cbtn cbtn-g' : 'cbtn cbtn-n';
+  if (dropBtn) dropBtn.className = mapPickMode === 'dropoff' ? 'cbtn cbtn-b' : 'cbtn cbtn-n';
+}
+
+function refreshMapSelectionMarkers(state = null) {
+  if (!mapObj || typeof L === 'undefined') return;
+  const pickupIndex = Number(document.getElementById('map-pickup')?.value ?? state?.pass_loc ?? 0);
+  const dropoffIndex = Number(document.getElementById('map-dropoff')?.value ?? state?.destination ?? 1);
+  const pickupLoc = MAP_LOCS_ADJUSTED[pickupIndex];
+  const dropLoc = MAP_LOCS_ADJUSTED[dropoffIndex];
+  const pickupLabel = state?.pass_label || pickupLoc.label;
+  const dropLabel = state?.dest_label || dropLoc.label;
+
+  if (pickupMarker) mapObj.removeLayer(pickupMarker);
+  pickupMarker = L.marker([pickupLoc.lat, pickupLoc.lng], {
+    icon: makePulseIcon(pickupLoc.color, pickupLabel)
+  }).bindPopup(`<b>Pickup:</b> ${pickupLoc.name}`).addTo(mapObj);
+
+  if (dropMarker) mapObj.removeLayer(dropMarker);
+  dropMarker = L.marker([dropLoc.lat, dropLoc.lng], {
+    icon: makePulseIcon(dropLoc.color, dropLabel)
+  }).bindPopup(`<b>Drop-off:</b> ${dropLoc.name}`).addTo(mapObj);
 }
 
 function cellRoadPoints(cell) {
@@ -1422,6 +1573,7 @@ function initMap() {
       });
       L.marker([loc.lat, loc.lng], { icon })
         .bindPopup(`<b style="color:${loc.color}">${loc.label} — ${loc.name}</b>`)
+        .on('click', () => setRideChoiceFromMap(i))
         .addTo(mapObj);
     });
     baseRoadLayer = L.layerGroup().addTo(mapObj);
@@ -1429,6 +1581,8 @@ function initMap() {
     routeLayer = L.layerGroup().addTo(mapObj);
     trailLayer = L.layerGroup().addTo(mapObj);
     drawBaseRoadNetwork();
+    refreshMapSelectionMarkers();
+    setMapPickMode('pickup');
   };
   document.head.appendChild(script);
 }
@@ -1460,7 +1614,9 @@ async function mapNewRide(live = false) {
   if (routeLayer) routeLayer.clearLayers();
   document.getElementById('map-log').innerHTML = '';
 
-  const data = await api('/api/sim/new', { method: 'POST', body: live ? { live: true } : {} });
+  const body = rideChoicePayload('map', live);
+  if (!body) return;
+  const data = await api('/api/sim/new', { method: 'POST', body });
   if (!data.ok || !data.state) {
     document.getElementById('mm-status').textContent = 'TRAIN REQUIRED';
     document.getElementById('mm-status').style.color = 'var(--accent4)';
@@ -1614,7 +1770,9 @@ function mapToggleSpeed() {
 async function mapAutoRun() {
   mapStop();
   document.getElementById('mm-status').textContent = 'AUTO';
-  const data = await api('/api/sim/auto', { method: 'POST', body: {} });
+  const body = rideChoicePayload('map', false);
+  if (!body) return;
+  const data = await api('/api/sim/auto', { method: 'POST', body });
   if (!data.ok || !data.steps) {
     document.getElementById('mm-status').textContent = 'TRAIN REQUIRED';
     document.getElementById('mm-status').style.color = 'var(--accent4)';

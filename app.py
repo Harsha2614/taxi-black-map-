@@ -194,6 +194,7 @@ def sim_new():
     with sim_lock:
         sim_env = TaxiEnvExtended(seed=seed)
         try:
+            _apply_ride_selection(sim_env, data)
             if live:
                 data = {**data, **_fetch_live_hazard_payload()}
             hazard_source = _apply_external_hazards(sim_env, data)
@@ -279,6 +280,7 @@ def sim_auto():
 
     env = TaxiEnvExtended(seed=seed)
     try:
+        _apply_ride_selection(env, data)
         if live:
             data = {**data, **_fetch_live_hazard_payload()}
         hazard_source = _apply_external_hazards(env, data)
@@ -450,6 +452,36 @@ def benchmark():
 # ──────────────────────────────────────────────
 #  HELPERS
 # ──────────────────────────────────────────────
+
+def _optional_location_index(data, key):
+    if key not in data or data.get(key) in (None, ''):
+        return None
+    value = int(data.get(key))
+    if value < 0 or value >= len(LOCS):
+        raise ValueError(f"{key} must be between 0 and {len(LOCS) - 1}")
+    return value
+
+
+def _apply_ride_selection(env, data):
+    """Apply optional user-selected pickup and drop-off points."""
+    pickup = _optional_location_index(data, 'pickup')
+    dropoff = _optional_location_index(data, 'dropoff')
+    if pickup is None and dropoff is None:
+        return
+    if pickup is None:
+        pickup = env.pass_loc
+    if dropoff is None:
+        dropoff = env.destination
+    if pickup == dropoff:
+        raise ValueError('Pickup and drop-off must be different')
+
+    env.pass_loc = pickup
+    env.destination = dropoff
+    env.pass_on_board = False
+    env.done = False
+    env.pickup_time = None
+    env.dropoff_time = None
+
 
 def _normalized_grid(value, name):
     """Validate a 5x5 grid of normalized traffic/weather values."""
