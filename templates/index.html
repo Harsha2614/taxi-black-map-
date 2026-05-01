@@ -592,14 +592,53 @@ function showPage(id) {
 }
 
 // ─── Constants ──────────────────────────────────
-const LOCS = [[0,0],[0,4],[4,0],[4,3],[2,2],[1,1]];
-const LOC_LABELS = ['R','G','Y','B','P','O'];
-const LOC_COLORS = ['#ef4444','#10b981','#f5c842','#3b82f6','#f97316','#a855f7'];
+const LOCS = [[0,0],[0,4],[4,0],[4,3],[2,2],[1,1],[1,3],[2,3],[3,1],[4,4],[0,2],[0,3],[1,4],[2,1],[3,4],[0,1],[1,0],[1,2],[2,0],[2,4],[3,0],[3,2],[3,3],[4,1],[4,2]];
+const LOC_LABELS = ['R','G','Y','B','P','O','J','S','M','A','K','T','C','E','D','L','N','Q','U','V','W','X','Z','H','I'];
+const LOC_COLORS = ['#ef4444','#10b981','#f5c842','#3b82f6','#f97316','#a855f7','#14b8a6','#ec4899','#84cc16','#06b6d4','#fb7185','#38bdf8','#22c55e','#f59e0b','#c084fc','#f43f5e','#2dd4bf','#818cf8','#bef264','#facc15','#fb923c','#67e8f9','#d946ef','#4ade80','#93c5fd'];
 const ACTION_NAMES = ['South','North','East','West','Pickup','Drop-off'];
 const RIDE_SELECT_IDS = {
   sim: ['sim-pickup', 'sim-dropoff'],
   map: ['map-pickup', 'map-dropoff'],
 };
+const RIDE_LOCATION_OPTIONS = [
+  'R - Charminar',
+  'G - HITEC City',
+  'Y - Secunderabad',
+  'B - Banjara Hills',
+  'P - Punjagutta',
+  'O - Lakdikapul',
+  'J - Jubilee Hills',
+  'S - Paradise',
+  'M - Mehdipatnam',
+  'A - Airport Feeder',
+  'K - Koti',
+  'T - Tank Bund',
+  'C - Cyber Towers',
+  'E - Begumpet',
+  'D - Dilsukhnagar',
+  'L - Afzal Gunj',
+  'N - Nampally',
+  'Q - Ameerpet',
+  'U - Masab Tank',
+  'V - Trimulgherry',
+  'W - Tolichowki',
+  'X - SR Nagar',
+  'Z - Panjagutta South',
+  'H - Old City South',
+  'I - Banjara Connector',
+];
+
+function populateRideSelectors() {
+  Object.values(RIDE_SELECT_IDS).flat().forEach(id => {
+    const select = document.getElementById(id);
+    if (!select) return;
+    const current = select.value || (id.endsWith('dropoff') ? '1' : '0');
+    select.innerHTML = RIDE_LOCATION_OPTIONS
+      .map((label, idx) => `<option value="${idx}">${label}</option>`)
+      .join('');
+    select.value = Number(current) < RIDE_LOCATION_OPTIONS.length ? current : (id.endsWith('dropoff') ? '1' : '0');
+  });
+}
 
 function syncRideSelectors(source) {
   const ids = RIDE_SELECT_IDS[source];
@@ -1118,6 +1157,7 @@ async function checkStatus() {
 
 // ─── INIT ────────────────────────────────────────
 (async () => {
+  populateRideSelectors();
   initHeroGrid();
   initSimGrid();
   await checkStatus();
@@ -1147,6 +1187,25 @@ const MAP_LOCS = [
   { label:'B', name:'Banjara Hills',      lat:17.4156, lng:78.4480, color:'#3b82f6' },
   { label:'P', name:'Punjagutta',         lat:17.4280, lng:78.4510, color:'#f97316' },
   { label:'O', name:'Lakdikapul',         lat:17.4045, lng:78.4563, color:'#a855f7' },
+  { label:'J', name:'Jubilee Hills',      lat:17.4320, lng:78.4070, color:'#14b8a6' },
+  { label:'S', name:'Paradise',           lat:17.4440, lng:78.4870, color:'#ec4899' },
+  { label:'M', name:'Mehdipatnam',        lat:17.3950, lng:78.4300, color:'#84cc16' },
+  { label:'A', name:'Airport Feeder',     lat:17.3370, lng:78.5200, color:'#06b6d4' },
+  { label:'K', name:'Koti',               lat:17.3890, lng:78.4860, color:'#fb7185' },
+  { label:'T', name:'Tank Bund',          lat:17.4220, lng:78.4750, color:'#38bdf8' },
+  { label:'C', name:'Cyber Towers',       lat:17.4480, lng:78.3910, color:'#22c55e' },
+  { label:'E', name:'Begumpet',           lat:17.4370, lng:78.4570, color:'#f59e0b' },
+  { label:'D', name:'Dilsukhnagar',       lat:17.3910, lng:78.4900, color:'#c084fc' },
+  { label:'L', name:'Afzal Gunj',         lat:17.4700, lng:78.4490, color:'#f43f5e' },
+  { label:'N', name:'Nampally',           lat:17.4390, lng:78.4170, color:'#2dd4bf' },
+  { label:'Q', name:'Ameerpet',           lat:17.4360, lng:78.4580, color:'#818cf8' },
+  { label:'U', name:'Masab Tank',         lat:17.4000, lng:78.4180, color:'#bef264' },
+  { label:'V', name:'Trimulgherry',       lat:17.4030, lng:78.5300, color:'#facc15' },
+  { label:'W', name:'Tolichowki',         lat:17.3670, lng:78.4140, color:'#fb923c' },
+  { label:'X', name:'SR Nagar',           lat:17.3630, lng:78.4720, color:'#67e8f9' },
+  { label:'Z', name:'Panjagutta South',   lat:17.3660, lng:78.4920, color:'#d946ef' },
+  { label:'H', name:'Old City South',     lat:17.3290, lng:78.4410, color:'#4ade80' },
+  { label:'I', name:'Banjara Connector',  lat:17.3280, lng:78.4700, color:'#93c5fd' },
 ];
 
 // Remap to fit in our bounding box
@@ -1157,6 +1216,25 @@ const MAP_LOCS_ADJUSTED = [
   { label:'B', name:'Banjara Hills',     lat:17.416, lng:78.448, color:'#3b82f6' },
   { label:'P', name:'Punjagutta',        lat:17.400, lng:78.473, color:'#f97316' },
   { label:'O', name:'Lakdikapul',        lat:17.441, lng:78.446, color:'#a855f7' },
+  { label:'J', name:'Jubilee Hills',     lat:17.432, lng:78.407, color:'#14b8a6' },
+  { label:'S', name:'Paradise',          lat:17.444, lng:78.487, color:'#ec4899' },
+  { label:'M', name:'Mehdipatnam',       lat:17.395, lng:78.430, color:'#84cc16' },
+  { label:'A', name:'Airport Feeder',    lat:17.337, lng:78.520, color:'#06b6d4' },
+  { label:'K', name:'Koti',              lat:17.389, lng:78.486, color:'#fb7185' },
+  { label:'T', name:'Tank Bund',         lat:17.422, lng:78.475, color:'#38bdf8' },
+  { label:'C', name:'Cyber Towers',      lat:17.448, lng:78.391, color:'#22c55e' },
+  { label:'E', name:'Begumpet',          lat:17.437, lng:78.457, color:'#f59e0b' },
+  { label:'D', name:'Dilsukhnagar',      lat:17.391, lng:78.490, color:'#c084fc' },
+  { label:'L', name:'Afzal Gunj',        lat:17.470, lng:78.449, color:'#f43f5e' },
+  { label:'N', name:'Nampally',          lat:17.439, lng:78.417, color:'#2dd4bf' },
+  { label:'Q', name:'Ameerpet',          lat:17.436, lng:78.458, color:'#818cf8' },
+  { label:'U', name:'Masab Tank',        lat:17.400, lng:78.418, color:'#bef264' },
+  { label:'V', name:'Trimulgherry',      lat:17.403, lng:78.530, color:'#facc15' },
+  { label:'W', name:'Tolichowki',        lat:17.367, lng:78.414, color:'#fb923c' },
+  { label:'X', name:'SR Nagar',          lat:17.363, lng:78.472, color:'#67e8f9' },
+  { label:'Z', name:'Panjagutta South',  lat:17.366, lng:78.492, color:'#d946ef' },
+  { label:'H', name:'Old City South',    lat:17.329, lng:78.441, color:'#4ade80' },
+  { label:'I', name:'Banjara Connector', lat:17.328, lng:78.470, color:'#93c5fd' },
 ];
 
 const ROAD_NODE_OFFSETS = [

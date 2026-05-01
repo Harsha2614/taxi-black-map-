@@ -50,6 +50,25 @@ MAP_LOCS_ADJUSTED = [
     {'lat': 17.416, 'lng': 78.448},
     {'lat': 17.400, 'lng': 78.473},
     {'lat': 17.441, 'lng': 78.446},
+    {'lat': 17.432, 'lng': 78.407},
+    {'lat': 17.444, 'lng': 78.487},
+    {'lat': 17.395, 'lng': 78.430},
+    {'lat': 17.337, 'lng': 78.520},
+    {'lat': 17.389, 'lng': 78.486},
+    {'lat': 17.422, 'lng': 78.475},
+    {'lat': 17.448, 'lng': 78.391},
+    {'lat': 17.437, 'lng': 78.457},
+    {'lat': 17.391, 'lng': 78.490},
+    {'lat': 17.470, 'lng': 78.449},
+    {'lat': 17.439, 'lng': 78.417},
+    {'lat': 17.436, 'lng': 78.458},
+    {'lat': 17.400, 'lng': 78.418},
+    {'lat': 17.403, 'lng': 78.530},
+    {'lat': 17.367, 'lng': 78.414},
+    {'lat': 17.363, 'lng': 78.472},
+    {'lat': 17.366, 'lng': 78.492},
+    {'lat': 17.329, 'lng': 78.441},
+    {'lat': 17.328, 'lng': 78.470},
 ]
 
 
@@ -567,35 +586,39 @@ def _fetch_tomtom_traffic(lat, lng, api_key):
     }
 
 
-def _fetch_openweather(lat, lng, api_key):
+def _fetch_weatherapi(lat, lng, api_key):
     params = urllib.parse.urlencode({
-        'lat': f'{lat:.6f}',
-        'lon': f'{lng:.6f}',
-        'appid': api_key,
-        'units': 'metric',
+        'key': api_key,
+        'q': f'{lat:.6f},{lng:.6f}',
+        'aqi': 'no',
     })
-    url = f'https://api.openweathermap.org/data/2.5/weather?{params}'
+    url = f'https://api.weatherapi.com/v1/current.json?{params}'
     data = _read_json_url(url)
-    rain = float((data.get('rain') or {}).get('1h') or (data.get('rain') or {}).get('3h') or 0.0)
-    snow = float((data.get('snow') or {}).get('1h') or (data.get('snow') or {}).get('3h') or 0.0)
-    wind = float((data.get('wind') or {}).get('speed') or 0.0)
-    clouds = float((data.get('clouds') or {}).get('all') or 0.0)
-    visibility = float(data.get('visibility') or 10000.0)
-    condition = (data.get('weather') or [{}])[0].get('main', '')
+    current = data.get('current') or {}
+    condition_data = current.get('condition') or {}
+    precipitation = float(current.get('precip_mm') or 0.0)
+    wind_kph = float(current.get('wind_kph') or 0.0)
+    gust_kph = float(current.get('gust_kph') or wind_kph)
+    clouds = float(current.get('cloud') or 0.0)
+    visibility_km = float(current.get('vis_km') or 10.0)
+    humidity = float(current.get('humidity') or 0.0)
+    condition = condition_data.get('text', '')
 
-    precipitation_score = min(1.0, (rain + snow) / 12.0)
-    wind_score = min(1.0, wind / 18.0)
+    precipitation_score = min(1.0, precipitation / 12.0)
+    wind_score = min(1.0, max(wind_kph, gust_kph) / 65.0)
     cloud_score = min(1.0, clouds / 100.0) * 0.35
-    visibility_score = max(0.0, min(1.0, (10000.0 - visibility) / 10000.0))
-    intensity = min(1.0, precipitation_score * 0.55 + wind_score * 0.20 + cloud_score + visibility_score * 0.25)
+    visibility_score = max(0.0, min(1.0, (10.0 - visibility_km) / 10.0))
+    humidity_score = min(1.0, humidity / 100.0) * 0.15
+    intensity = min(1.0, precipitation_score * 0.55 + wind_score * 0.20 + cloud_score + visibility_score * 0.25 + humidity_score)
 
     return intensity, {
         'condition': condition,
-        'rain_mm': round(rain, 2),
-        'snow_mm': round(snow, 2),
-        'wind_mps': round(wind, 2),
+        'precip_mm': round(precipitation, 2),
+        'wind_kph': round(wind_kph, 2),
+        'gust_kph': round(gust_kph, 2),
         'clouds_pct': round(clouds, 1),
-        'visibility_m': int(visibility),
+        'humidity_pct': round(humidity, 1),
+        'visibility_km': round(visibility_km, 1),
     }
 
 
@@ -650,15 +673,15 @@ def _fetch_tomtom_route_points(cells):
 
 
 def _fetch_live_hazard_payload():
-    """Build normalized hazard grids from TomTom traffic and OpenWeather."""
+    """Build normalized hazard grids from TomTom traffic and WeatherAPI.com."""
     tomtom_key = os.getenv('TOMTOM_API_KEY')
-    weather_key = os.getenv('OPENWEATHER_API_KEY')
+    weather_key = os.getenv('WEATHERAPI_KEY')
     if not tomtom_key or not weather_key:
         missing = []
         if not tomtom_key:
             missing.append('TOMTOM_API_KEY')
         if not weather_key:
-            missing.append('OPENWEATHER_API_KEY')
+            missing.append('WEATHERAPI_KEY')
         raise RuntimeError(f"Missing API key env var(s): {', '.join(missing)}")
 
     traffic_grid = np.zeros((5, 5), dtype=float)
@@ -666,9 +689,9 @@ def _fetch_live_hazard_payload():
     samples = []
     center_lat, center_lng = _grid_lat_lng(2, 2)
     try:
-        city_weather, city_weather_meta = _fetch_openweather(center_lat, center_lng, weather_key)
+        city_weather, city_weather_meta = _fetch_weatherapi(center_lat, center_lng, weather_key)
     except Exception as exc:
-        raise RuntimeError(f"OpenWeather fetch failed: {exc}") from exc
+        raise RuntimeError(f"WeatherAPI fetch failed: {exc}") from exc
 
     for row in range(5):
         for col in range(5):
@@ -694,7 +717,7 @@ def _fetch_live_hazard_payload():
     return {
         'traffic_grid': traffic_grid.round(3).tolist(),
         'weather_grid': weather_grid.round(3).tolist(),
-        'hazard_source': 'live:tomtom+openweather',
+        'hazard_source': 'live:tomtom+weatherapi',
         'live_samples': samples,
         'fetched_at': int(time.time()),
     }

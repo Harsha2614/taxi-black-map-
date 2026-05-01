@@ -5,9 +5,25 @@ import numpy as np
 import random
 
 # Fixed pickup/dropoff locations across the grid.
-LOCS = [(0, 0), (0, 4), (4, 0), (4, 3), (2, 2), (1, 1)]
-LOC_LABELS = ['R', 'G', 'Y', 'B', 'P', 'O']
-LOC_COLORS = ['#ef4444', '#10b981', '#f5c842', '#3b82f6', '#f97316', '#a855f7']
+LOCS = [
+    (0, 0), (0, 4), (4, 0), (4, 3), (2, 2),
+    (1, 1), (1, 3), (2, 3), (3, 1), (4, 4),
+    (0, 2), (0, 3), (1, 4), (2, 1), (3, 4),
+    (0, 1), (1, 0), (1, 2), (2, 0), (2, 4),
+    (3, 0), (3, 2), (3, 3), (4, 1), (4, 2),
+]
+LOC_LABELS = [
+    'R', 'G', 'Y', 'B', 'P', 'O', 'J', 'S', 'M', 'A',
+    'K', 'T', 'C', 'E', 'D', 'L', 'N', 'Q', 'U', 'V',
+    'W', 'X', 'Z', 'H', 'I',
+]
+LOC_COLORS = [
+    '#ef4444', '#10b981', '#f5c842', '#3b82f6', '#f97316',
+    '#a855f7', '#14b8a6', '#ec4899', '#84cc16', '#06b6d4',
+    '#fb7185', '#38bdf8', '#22c55e', '#f59e0b', '#c084fc',
+    '#f43f5e', '#2dd4bf', '#818cf8', '#bef264', '#facc15',
+    '#fb923c', '#67e8f9', '#d946ef', '#4ade80', '#93c5fd',
+]
 
 # Walls in the grid (kept for future expansion).
 WALLS = {
