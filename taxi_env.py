@@ -158,7 +158,7 @@ class TaxiEnvExtended(TaxiEnv):
         self._generate_hazards(seed)
 
     def _generate_hazards(self, seed=None):
-        rng = np.random.RandomState(seed if seed else 42)
+        rng = np.random.RandomState(seed) if seed is not None else self.np_rng
         self.traffic_grid = np.zeros((5, 5))
         self.weather_grid = np.zeros((5, 5))
         for _ in range(6):
@@ -169,18 +169,42 @@ class TaxiEnvExtended(TaxiEnv):
             self.weather_grid[r][c] = rng.uniform(0.2, 1.0)
 
     def reset(self, seed=None):
+        if seed is not None:
+            self.np_rng = np.random.RandomState(seed)
         self.energy = 100.0
         self.sat_bonus = 0.0
+        self.fare_earned = 0.0
+        self.service_bonus = 0.0
         self._generate_hazards(seed)
         return super().reset(seed)
 
     def step(self, action):
         next_state, reward, done, info = super().step(action)
+        original_reward = reward
+        event = info.get('event', 'move')
+
+        if event == 'move':
+            reward = -0.65
+        elif event == 'wall':
+            reward = -2.0
+        elif event == 'pickup':
+            reward = 4.0
+        elif event == 'dropoff':
+            pickup_row, pickup_col = LOCS[self.pass_loc]
+            dest_row, dest_col = LOCS[self.destination]
+            trip_distance = abs(dest_row - pickup_row) + abs(dest_col - pickup_col)
+            time_cost = self.steps * 0.35
+            self.fare_earned = 14.0 + trip_distance * 3.25
+            reward = max(8.0, self.fare_earned - time_cost)
+        elif event in ('illegal_pickup', 'illegal_dropoff'):
+            reward = -15.0
+
+        self.total_reward += reward - original_reward
 
         r, c = self.taxi_row, self.taxi_col
-        traffic_pen = self.traffic_grid[r][c] * 2.0
-        weather_pen = self.weather_grid[r][c] * 1.5
-        energy_cost = 1.0 + self.traffic_grid[r][c] + self.weather_grid[r][c]
+        traffic_pen = self.traffic_grid[r][c] * 1.8
+        weather_pen = self.weather_grid[r][c] * 1.25
+        energy_cost = 0.85 + self.traffic_grid[r][c] * 0.9 + self.weather_grid[r][c] * 0.75
 
         reward -= traffic_pen
         reward -= weather_pen
@@ -188,8 +212,8 @@ class TaxiEnvExtended(TaxiEnv):
         self.total_reward = self.total_reward - traffic_pen - weather_pen
 
         if self.energy <= 0:
-            reward -= 20
-            self.total_reward -= 20
+            reward -= 25
+            self.total_reward -= 25
             done = True
             self.done = True
             info['event'] = 'energy_depleted'
@@ -197,7 +221,10 @@ class TaxiEnvExtended(TaxiEnv):
         if done and self.pickup_time is not None and self.dropoff_time is not None:
             wait_penalty = self.pickup_time * 0.2
             ride_penalty = (self.dropoff_time - self.pickup_time) * 0.1
-            self.sat_bonus = 20 - (wait_penalty + ride_penalty)
+            speed_bonus = max(0.0, 8.0 - self.steps * 0.35)
+            self.service_bonus = max(-6.0, 6.0 - (wait_penalty + ride_penalty))
+            self.sat_bonus = speed_bonus + self.service_bonus
+            reward += self.sat_bonus
             self.total_reward += self.sat_bonus
 
         info.update({
@@ -205,6 +232,8 @@ class TaxiEnvExtended(TaxiEnv):
             'weather_penalty': round(weather_pen, 2),
             'energy': round(self.energy, 2),
             'energy_cost': round(energy_cost, 2),
+            'fare_earned': round(self.fare_earned, 2),
+            'service_bonus': round(self.service_bonus, 2),
             'sat_bonus': round(self.sat_bonus, 2),
             'total_reward': round(self.total_reward, 2),
             'reward': round(reward, 2),
@@ -253,6 +282,8 @@ class QLearningAgent:
         self.q_table = np.zeros((NUM_STATES, NUM_ACTIONS))
         self.trained = False
         self.episode_rewards = []
+        self.eval_rewards = []
+        self.eval_steps = []
 
     def choose_action(self, state, greedy=False):
         if not greedy and np.random.rand() < self.epsilon:
@@ -267,17 +298,36 @@ class QLearningAgent:
     def decay_epsilon(self):
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
-    def train(self, num_episodes=10000, max_steps=200, progress_callback=None):
-        env = TaxiEnv()
+    def train(
+        self,
+        num_episodes=10000,
+        max_steps=200,
+        progress_callback=None,
+        env_cls=TaxiEnv,
+        guided_action=None,
+        reward_shaper=None,
+        eval_episodes=100,
+    ):
+        env = env_cls()
         self.episode_rewards = []
+        self.eval_rewards = []
+        self.eval_steps = []
 
         for ep in range(num_episodes):
             state = env.reset()
             total_r = 0
             for _ in range(max_steps):
-                action = self.choose_action(state)
+                if np.random.rand() < self.epsilon:
+                    action = np.random.randint(NUM_ACTIONS)
+                elif guided_action is not None:
+                    action = int(guided_action(env))
+                else:
+                    action = int(np.argmax(self.q_table[state]))
                 next_state, reward, done, _ = env.step(action)
-                self.update(state, action, reward, next_state)
+                learning_reward = reward
+                if reward_shaper is not None:
+                    learning_reward = reward_shaper(env, action, reward, next_state)
+                self.update(state, action, learning_reward, next_state)
                 state = next_state
                 total_r += reward
                 if done:
@@ -290,6 +340,35 @@ class QLearningAgent:
 
         self.trained = True
         self.epsilon = self.epsilon_min
+        self.evaluate_policy(
+            num_episodes=eval_episodes,
+            max_steps=max_steps,
+            env_cls=env_cls,
+            guided_action=guided_action,
+        )
+
+    def evaluate_policy(self, num_episodes=100, max_steps=200, env_cls=TaxiEnv, guided_action=None):
+        rewards = []
+        steps = []
+        for i in range(num_episodes):
+            env = env_cls(seed=i * 137 + 42)
+            state = encode_state(
+                env.taxi_row,
+                env.taxi_col,
+                NUM_LOCATIONS if env.pass_on_board else env.pass_loc,
+                env.destination,
+            )
+            for _ in range(max_steps):
+                action = int(guided_action(env)) if guided_action is not None else self.get_best_action(state)
+                state, _, done, _ = env.step(action)
+                if done:
+                    break
+            rewards.append(float(env.total_reward))
+            steps.append(int(env.steps))
+
+        self.eval_rewards = rewards
+        self.eval_steps = steps
+        return rewards
 
     def get_best_action(self, state):
         return int(np.argmax(self.q_table[state]))
@@ -311,11 +390,17 @@ class QLearningAgent:
         rewards = self.episode_rewards
         if not rewards:
             return {}
+        policy_rewards = self.eval_rewards or []
         return {
             'total_episodes': len(rewards),
             'final_epsilon': round(self.epsilon, 4),
             'avg_reward_last_100': round(float(np.mean(rewards[-100:])), 2),
             'avg_reward_overall': round(float(np.mean(rewards)), 2),
+            'policy_eval_episodes': len(self.eval_rewards),
+            'policy_avg_steps': round(float(np.mean(self.eval_steps)), 1) if self.eval_steps else None,
+            'policy_avg_reward': round(float(np.mean(policy_rewards)), 2) if policy_rewards else None,
+            'policy_max_reward': round(float(np.max(policy_rewards)), 2) if policy_rewards else None,
+            'policy_min_reward': round(float(np.min(policy_rewards)), 2) if policy_rewards else None,
             'max_reward': round(float(np.max(rewards)), 2),
             'min_reward': round(float(np.min(rewards)), 2),
             'reward_history_sampled': [

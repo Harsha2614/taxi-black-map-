@@ -238,6 +238,7 @@ h1 .hl{color:var(--accent);}
           <button class="cbtn cbtn-n" onclick="resetSim()">⟳ RESET</button>
           <button class="cbtn cbtn-n" id="btn-speed" onclick="toggleSpeed()">⚡ FAST</button>
           <button class="cbtn cbtn-b" onclick="newRide()">↻ NEW RIDE</button>
+          <button class="cbtn cbtn-b" onclick="newRide(true)">LIVE RIDE</button>
           <button class="cbtn cbtn-g" onclick="runAuto()">⚡ AUTO-RUN</button>
         </div>
         <div class="log-wrap">
@@ -301,9 +302,10 @@ h1 .hl{color:var(--accent);}
     </div>
 
     <div class="stats-grid" id="train-stats" style="display:none;">
-      <div class="stat-card"><div class="stat-c-lbl">AVG REWARD (LAST 100)</div><div class="stat-c-val" id="ts-avg100">—</div></div>
-      <div class="stat-card"><div class="stat-c-lbl">AVG REWARD (OVERALL)</div><div class="stat-c-val" id="ts-avg">—</div></div>
+      <div class="stat-card"><div class="stat-c-lbl">AVG TRAINING REWARD (LAST 100)</div><div class="stat-c-val" id="ts-avg100">—</div></div>
+      <div class="stat-card"><div class="stat-c-lbl">AVG TRAINING REWARD (OVERALL)</div><div class="stat-c-val" id="ts-avg">—</div></div>
       <div class="stat-card"><div class="stat-c-lbl">MAX REWARD SEEN</div><div class="stat-c-val" id="ts-max">—</div></div>
+      <div class="stat-card"><div class="stat-c-lbl">GCN FINAL LOSS</div><div class="stat-c-val" id="ts-gcn">—</div></div>
     </div>
   </div>
 </div>
@@ -469,6 +471,7 @@ h1 .hl{color:var(--accent);}
         <div class="map-ctrl-row">
           <button class="cbtn cbtn-y" id="map-btn-run" onclick="mapToggleRun()">▶ START</button>
           <button class="cbtn cbtn-n" onclick="mapNewRide()">↻ NEW RIDE</button>
+          <button class="cbtn cbtn-n" onclick="mapNewRide(true)">LIVE RIDE</button>
           <button class="cbtn cbtn-b" onclick="mapAutoRun()">⚡ AUTO</button>
           <button class="cbtn cbtn-n" id="map-btn-speed" onclick="mapToggleSpeed()">⚡ FAST</button>
         </div>
@@ -685,10 +688,10 @@ function clearLog() {
 }
 
 // ─── Simulation control ──────────────────────────
-async function newRide() {
+async function newRide(live = false) {
   stopSim();
   visitedCells.clear();
-  const data = await api('/api/sim/new', { method: 'POST', body: {} });
+  const data = await api('/api/sim/new', { method: 'POST', body: live ? { live: true } : {} });
   if (data.error || !data.ok) {
     clearLog();
     addLog(data.error || 'Train the model', 'lx');
@@ -703,6 +706,7 @@ async function newRide() {
   renderGrid(data.state);
   clearLog();
   addLog(data.message, 'lp');
+  if (data.hazard_source) addLog(`Hazards: ${data.hazard_source}`, live ? 'lr' : '');
   setSimStatus('NEW RIDE', 'var(--accent2)');
   document.getElementById('btn-run').textContent = '▶ START RIDE';
   updateMetrics({ total_reward: 0, steps: 0, energy: data.state.energy ?? 100 });
@@ -899,10 +903,11 @@ async function loadTrainStats() {
   document.getElementById('ts-avg100').textContent = s.avg_reward_last_100;
   document.getElementById('ts-avg').textContent = s.avg_reward_overall;
   document.getElementById('ts-max').textContent = s.max_reward;
+  document.getElementById('ts-gcn').textContent = data.gcn?.final_loss ?? '—';
   document.getElementById('train-stats').style.display = 'grid';
-  document.getElementById('sb-avg').textContent = s.avg_reward_last_100;
-  document.getElementById('sb-avg-sub').textContent = 'Last 100 episodes';
-  document.getElementById('nav-status').textContent = 'Model Trained';
+  document.getElementById('sb-avg').textContent = data.live_eval?.avg_reward ?? s.avg_reward_last_100;
+  document.getElementById('sb-avg-sub').textContent = data.live_eval ? 'Fresh 25-ride eval' : 'Last 100 episodes';
+  document.getElementById('nav-status').textContent = data.gcn?.trained ? 'Model Trained · GCN' : 'Model Trained';
 }
 
 // ─── Q-Table ─────────────────────────────────────
@@ -951,7 +956,8 @@ async function loadAnalytics() {
   const stats = await api('/api/stats');
   if (stats.ok && stats.trained) {
     const s = stats.training_stats;
-    document.getElementById('sb-avg').textContent = s.avg_reward_last_100;
+    document.getElementById('sb-avg').textContent = stats.live_eval?.avg_reward ?? s.avg_reward_last_100;
+    document.getElementById('sb-avg-sub').textContent = stats.live_eval ? 'Fresh 25-ride eval' : 'Last 100 episodes';
     // Draw reward curve
     const hist = s.reward_history_sampled || [];
     drawRewardCurve(hist);
@@ -1002,7 +1008,8 @@ async function runBenchmark() {
 async function checkStatus() {
   const data = await api('/api/train/status');
   if (data.trained) {
-    document.getElementById('nav-status').textContent = 'Model Trained · ' + (data.stats?.avg_reward_last_100 ?? '') + ' avg';
+    const gcnText = data.gcn?.trained ? ' · GCN' : '';
+    document.getElementById('nav-status').textContent = 'Model Trained' + gcnText + ' · ' + (data.stats?.avg_reward_last_100 ?? '') + ' avg';
     if (data.stats?.avg_reward_last_100)
       document.getElementById('sb-avg').textContent = data.stats.avg_reward_last_100;
   } else if (data.status === 'running') {
@@ -1027,6 +1034,7 @@ let baseRoadLayer = null, hazardLayer = null, routeLayer = null, trailLayer = nu
 let mapRunning = false, mapInterval = null, mapSpeed = 700;
 let mapTrailCoords = [];
 let mapHazardCells = [];
+let mapCellCoords = {};
 
 // Real Hyderabad coordinates for the 5×5 grid
 // Mapped across a bounding box: SW(17.33,78.42) → NE(17.47,78.52)
@@ -1070,6 +1078,9 @@ const MAP_CELL_NAMES = [
 ];
 
 function gridToLatLng(row, col) {
+  const keyed = mapCellCoords[`${row},${col}`];
+  if (keyed) return keyed;
+
   // Uses slightly shifted nodes so the live map follows original route corridors instead of a visible square grid.
   const baseLat = MAP_LAT_MAX - (row / 4) * (MAP_LAT_MAX - MAP_LAT_MIN);
   const baseLng = MAP_LNG_MIN + (col / 4) * (MAP_LNG_MAX - MAP_LNG_MIN);
@@ -1083,6 +1094,23 @@ function gridToLatLng(row, col) {
     lng = MAP_LOCS_ADJUSTED[locIndex].lng;
   }
   return [lat, lng];
+}
+
+function syncMapCellCoords(state) {
+  mapCellCoords = {};
+  (state?.cells || []).forEach(cell => {
+    if (Number.isFinite(cell.lat) && Number.isFinite(cell.lng)) {
+      mapCellCoords[`${cell.row},${cell.col}`] = [cell.lat, cell.lng];
+    }
+  });
+}
+
+function cellRoadPoints(cell) {
+  const points = cell?.traffic_meta?.road_points || [];
+  return points
+    .filter(point => Array.isArray(point) && point.length === 2)
+    .map(point => [Number(point[0]), Number(point[1])])
+    .filter(point => Number.isFinite(point[0]) && Number.isFinite(point[1]));
 }
 
 function getSegmentMidpoint(start, end, bend = 0.18) {
@@ -1162,22 +1190,34 @@ function renderHazardZones(state) {
   hotspots.forEach(cell => {
     const [lat, lng] = gridToLatLng(cell.row, cell.col);
     const severity = Math.max(cell.traffic, cell.weather);
+    const roadPoints = cellRoadPoints(cell);
     if (cell.traffic > 0.2) {
-      L.circle([lat, lng], {
-        radius: 240 + (cell.traffic * 180),
-        color: '#ef4444',
-        weight: 1.4,
-        fillColor: '#ef4444',
-        fillOpacity: 0.16 + (cell.traffic * 0.12)
-      }).bindPopup(`<b>Traffic zone</b><br>${MAP_CELL_NAMES[cell.row][cell.col]}<br>Intensity: ${cell.traffic.toFixed(2)}`).addTo(hazardLayer);
+      const trafficPopup = `<b>Traffic zone</b><br>${MAP_CELL_NAMES[cell.row][cell.col]}<br>Intensity: ${cell.traffic.toFixed(2)}`;
+      if (roadPoints.length >= 2) {
+        L.polyline(roadPoints, {
+          color: '#ef4444',
+          weight: 5 + cell.traffic * 5,
+          opacity: 0.55 + cell.traffic * 0.3,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).bindPopup(trafficPopup).addTo(hazardLayer);
+      } else {
+        L.circle([lat, lng], {
+          radius: 180 + (cell.traffic * 150),
+          color: '#ef4444',
+          weight: 1.4,
+          fillColor: '#ef4444',
+          fillOpacity: 0.14 + (cell.traffic * 0.10)
+        }).bindPopup(trafficPopup).addTo(hazardLayer);
+      }
     }
     if (cell.weather > 0.2) {
       L.circle([lat, lng], {
-        radius: 210 + (cell.weather * 170),
+        radius: 260 + (cell.weather * 220),
         color: '#8b5cf6',
         weight: 1.4,
         fillColor: '#8b5cf6',
-        fillOpacity: 0.14 + (cell.weather * 0.12)
+        fillOpacity: 0.10 + (cell.weather * 0.08)
       }).bindPopup(`<b>Weather zone</b><br>${MAP_CELL_NAMES[cell.row][cell.col]}<br>Intensity: ${cell.weather.toFixed(2)}`).addTo(hazardLayer);
     }
     L.circleMarker([lat, lng], {
@@ -1197,6 +1237,9 @@ function renderHazardZones(state) {
   zoneList.innerHTML = hotspots.map(cell => {
     const primaryType = cell.traffic >= cell.weather ? 'traffic' : 'weather';
     const primaryValue = primaryType === 'traffic' ? cell.traffic : cell.weather;
+    const trafficMeta = cell.traffic_meta?.current_speed !== undefined
+      ? `<div class="map-zone-meta">${cell.traffic_meta.current_speed} / ${cell.traffic_meta.free_flow_speed} km/h · conf ${cell.traffic_meta.confidence}</div>`
+      : '';
     return `
       <div class="map-zone-item ${primaryType}">
         <div class="map-zone-top">
@@ -1204,6 +1247,7 @@ function renderHazardZones(state) {
           <span>${primaryValue.toFixed(2)}</span>
         </div>
         <div class="map-zone-name">${MAP_CELL_NAMES[cell.row][cell.col]}</div>
+        ${trafficMeta}
         <div class="map-zone-meta">Traffic ${cell.traffic.toFixed(2)} · Weather ${cell.weather.toFixed(2)}</div>
       </div>
     `;
@@ -1325,7 +1369,11 @@ function getRoutePolylinePoints(routeCells) {
 function drawPlannedRoute(route) {
   if (!routeLayer) return;
   routeLayer.clearLayers();
-  const points = getRoutePolylinePoints(route?.cells || []);
+  const liveRoadPoints = (route?.road_points || [])
+    .filter(point => Array.isArray(point) && point.length === 2)
+    .map(point => [Number(point[0]), Number(point[1])])
+    .filter(point => Number.isFinite(point[0]) && Number.isFinite(point[1]));
+  const points = liveRoadPoints.length >= 2 ? liveRoadPoints : getRoutePolylinePoints(route?.cells || []);
   if (points.length < 2) return;
 
   L.polyline(points, {
@@ -1404,7 +1452,7 @@ function makePulseIcon(color, label) {
   });
 }
 
-async function mapNewRide() {
+async function mapNewRide(live = false) {
   mapStop();
   mapTrailCoords = [];
   if (trailLayer) trailLayer.clearLayers();
@@ -1412,7 +1460,7 @@ async function mapNewRide() {
   if (routeLayer) routeLayer.clearLayers();
   document.getElementById('map-log').innerHTML = '';
 
-  const data = await api('/api/sim/new', { method: 'POST', body: {} });
+  const data = await api('/api/sim/new', { method: 'POST', body: live ? { live: true } : {} });
   if (!data.ok || !data.state) {
     document.getElementById('mm-status').textContent = 'TRAIN REQUIRED';
     document.getElementById('mm-status').style.color = 'var(--accent4)';
@@ -1423,6 +1471,8 @@ async function mapNewRide() {
   }
 
   const s = data.state;
+  syncMapCellCoords(s);
+  drawBaseRoadNetwork();
   const [tLat, tLng] = gridToLatLng(s.taxi.row, s.taxi.col);
 
   if (taxiMarker) mapObj.removeLayer(taxiMarker);
@@ -1446,6 +1496,11 @@ async function mapNewRide() {
   renderHazardZones(s);
   updateMapStats(s, {});
   mapAddLog(`New ride · Pickup: ${pickLoc.name} (${s.pass_label}) → Drop: ${dropLoc.name} (${s.dest_label})`, 'pick');
+  if (data.hazard_source) mapAddLog(`Hazards: ${data.hazard_source}`, live ? 'drop' : '');
+  if (s.planned_route?.road_summary?.length_m) {
+    const rs = s.planned_route.road_summary;
+    mapAddLog(`Road route: ${(rs.length_m / 1000).toFixed(1)} km · delay ${rs.traffic_delay_s ?? 0}s`, 'drop');
+  }
   document.getElementById('map-btn-run').textContent = '▶ START';
   document.getElementById('mm-status').textContent = 'READY';
 }
@@ -1463,6 +1518,7 @@ async function mapDoStep() {
   }
 
   const s = data.state;
+  syncMapCellCoords(s);
   const [tLat, tLng] = gridToLatLng(s.taxi.row, s.taxi.col);
 
   const trailSegment = await animateTaxiTo(tLat, tLng, s.pass_on_board);
@@ -1570,6 +1626,7 @@ async function mapAutoRun() {
   let i = 0;
   mapTrailCoords = [];
   mapHazardCells = data.final_grid?.cells || mapHazardCells;
+  syncMapCellCoords(data.final_grid);
   if (trailLayer) trailLayer.clearLayers();
   drawPlannedRoute(data.final_grid?.planned_route);
   document.getElementById('map-log').innerHTML = '';
