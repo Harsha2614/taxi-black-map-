@@ -12,7 +12,7 @@ import urllib.request
 import numpy as np
 from flask import Flask, jsonify, request, render_template, Response, stream_with_context
 
-from taxi_env import TaxiEnvExtended, QLearningAgent, LOC_LABELS, LOC_COLORS, LOCS, NUM_STATES, ACTION_NAMES
+from taxi_env import TaxiEnvExtended, QLearningAgent, LOC_LABELS, LOC_COLORS, LOCS, NUM_STATES, ACTION_NAMES, GRID_SIZE
 from gcn_model import TaxiGCNCostModel
 
 app = Flask(__name__)
@@ -31,7 +31,7 @@ sim_env = None
 sim_lock = threading.Lock()
 route_geometry_cache = {}
 
-# Hyderabad sample points matching the frontend's 5x5 map grid.
+# Hyderabad sample points matching the frontend's map grid.
 MAP_LAT_MIN = 17.330
 MAP_LAT_MAX = 17.470
 MAP_LNG_MIN = 78.420
@@ -416,7 +416,7 @@ def gcn_stats():
 
 @app.route('/api/live/hazards')
 def live_hazards():
-    """Fetch live traffic/weather and return normalized 5x5 hazard grids."""
+    """Fetch live traffic/weather and return normalized hazard grids."""
     try:
         payload = _fetch_live_hazard_payload()
     except RuntimeError as exc:
@@ -503,10 +503,10 @@ def _apply_ride_selection(env, data):
 
 
 def _normalized_grid(value, name):
-    """Validate a 5x5 grid of normalized traffic/weather values."""
+    """Validate a grid of normalized traffic/weather values."""
     arr = np.asarray(value, dtype=float)
-    if arr.shape != (5, 5):
-        raise ValueError(f"{name} must be a 5x5 array")
+    if arr.shape != (GRID_SIZE, GRID_SIZE):
+        raise ValueError(f"{name} must be a {GRID_SIZE}x{GRID_SIZE} array")
     if not np.isfinite(arr).all():
         raise ValueError(f"{name} contains non-finite values")
     return np.clip(arr, 0.0, 1.0)
@@ -514,9 +514,12 @@ def _normalized_grid(value, name):
 
 def _grid_lat_lng(row, col):
     """Match the frontend grid cell to a real Hyderabad coordinate."""
-    base_lat = MAP_LAT_MAX - (row / 4) * (MAP_LAT_MAX - MAP_LAT_MIN)
-    base_lng = MAP_LNG_MIN + (col / 4) * (MAP_LNG_MAX - MAP_LNG_MIN)
-    lat_offset, lng_offset = ROAD_NODE_OFFSETS[row][col]
+    denominator = max(GRID_SIZE - 1, 1)
+    base_lat = MAP_LAT_MAX - (row / denominator) * (MAP_LAT_MAX - MAP_LAT_MIN)
+    base_lng = MAP_LNG_MIN + (col / denominator) * (MAP_LNG_MAX - MAP_LNG_MIN)
+    lat_offset, lng_offset = (0.0, 0.0)
+    if row < len(ROAD_NODE_OFFSETS) and col < len(ROAD_NODE_OFFSETS[row]):
+        lat_offset, lng_offset = ROAD_NODE_OFFSETS[row][col]
     lat = base_lat + lat_offset
     lng = base_lng + lng_offset
 
@@ -684,17 +687,17 @@ def _fetch_live_hazard_payload():
             missing.append('WEATHERAPI_KEY')
         raise RuntimeError(f"Missing API key env var(s): {', '.join(missing)}")
 
-    traffic_grid = np.zeros((5, 5), dtype=float)
-    weather_grid = np.zeros((5, 5), dtype=float)
+    traffic_grid = np.zeros((GRID_SIZE, GRID_SIZE), dtype=float)
+    weather_grid = np.zeros((GRID_SIZE, GRID_SIZE), dtype=float)
     samples = []
-    center_lat, center_lng = _grid_lat_lng(2, 2)
+    center_lat, center_lng = _grid_lat_lng(GRID_SIZE // 2, GRID_SIZE // 2)
     try:
         city_weather, city_weather_meta = _fetch_weatherapi(center_lat, center_lng, weather_key)
     except Exception as exc:
         raise RuntimeError(f"WeatherAPI fetch failed: {exc}") from exc
 
-    for row in range(5):
-        for col in range(5):
+    for row in range(GRID_SIZE):
+        for col in range(GRID_SIZE):
             lat, lng = _grid_lat_lng(row, col)
             try:
                 traffic, traffic_meta = _fetch_tomtom_traffic(lat, lng, tomtom_key)

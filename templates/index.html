@@ -47,8 +47,9 @@ h1 .hl{color:var(--accent);}
 /* ── GRID PREVIEW ── */
 .grid-canvas{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:1.25rem;}
 .grid-mono{font-family:var(--font-mono);font-size:10px;color:var(--text3);margin-bottom:.75rem;letter-spacing:.05em;}
-.preview-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;}
+.preview-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;}
 .pcell{aspect-ratio:1;border-radius:5px;background:var(--bg2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;font-family:var(--font-mono);}
+.pcell.city-cell{background:#141a24;border-color:#30394c;box-shadow:inset 0 0 0 1px rgba(255,255,255,.018),0 1px 0 rgba(255,255,255,.025);}
 .pcell.taxi{background:rgba(245,200,66,.15);border-color:var(--accent);color:var(--accent);}
 .pcell.pickup{background:rgba(16,185,129,.1);border-color:var(--accent3);color:var(--accent3);}
 .pcell.dropoff{background:rgba(59,130,246,.1);border-color:var(--accent2);color:var(--accent2);}
@@ -78,8 +79,9 @@ h1 .hl{color:var(--accent);}
 .card-body{padding:1.2rem;}
 
 /* ── SIM GRID ── */
-.sim-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:1rem;}
+.sim-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:1rem;}
 .scell{aspect-ratio:1;border-radius:6px;background:var(--bg2);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;font-family:var(--font-mono);cursor:pointer;transition:all .2s;position:relative;font-weight:700;}
+.scell.city-cell{background:#141a24;border-color:#30394c;box-shadow:inset 0 0 0 1px rgba(255,255,255,.018),0 1px 0 rgba(255,255,255,.025);}
 .scell.s-taxi{background:rgba(245,200,66,.18);border-color:var(--accent);box-shadow:0 0 12px rgba(245,200,66,.3);color:var(--accent);}
 .scell.s-pickup{background:rgba(16,185,129,.12);border-color:var(--accent3);}
 .scell.s-dropoff{background:rgba(59,130,246,.12);border-color:var(--accent2);}
@@ -208,7 +210,7 @@ h1 .hl{color:var(--accent);}
     </div>
     <div>
       <div class="grid-canvas">
-        <div class="grid-mono">// TAXI-V3 ENVIRONMENT · 5×5 GRID</div>
+        <div class="grid-mono">// TAXI-V3 ENVIRONMENT · 6×6 GRID</div>
         <div class="preview-grid" id="hero-grid"></div>
         <div class="legend">
           <div class="leg"><div class="leg-dot" style="background:rgba(245,200,66,.5);border:1px solid var(--accent)"></div>Taxi</div>
@@ -267,7 +269,7 @@ h1 .hl{color:var(--accent);}
           <button class="cbtn cbtn-n" id="btn-speed" onclick="toggleSpeed()">⚡ FAST</button>
           <button class="cbtn cbtn-b" onclick="newRide()">↻ NEW RIDE</button>
           <button class="cbtn cbtn-b" onclick="newRide(true)">LIVE RIDE</button>
-          <button class="cbtn cbtn-g" onclick="runAuto()">⚡ AUTO-RUN</button>
+          <button class="cbtn cbtn-g" id="btn-auto" onclick="runAuto()">⚡ AUTO-RUN</button>
         </div>
         <div class="log-wrap">
           <div class="log-hd"><span>ACTION LOG</span><span id="step-ctr">step 0</span></div>
@@ -526,7 +528,7 @@ h1 .hl{color:var(--accent);}
           <button class="cbtn cbtn-y" id="map-btn-run" onclick="mapToggleRun()">▶ START</button>
           <button class="cbtn cbtn-n" onclick="mapNewRide()">↻ NEW RIDE</button>
           <button class="cbtn cbtn-n" onclick="mapNewRide(true)">LIVE RIDE</button>
-          <button class="cbtn cbtn-b" onclick="mapAutoRun()">⚡ AUTO</button>
+          <button class="cbtn cbtn-b" id="map-btn-auto" onclick="mapAutoRun()">⚡ AUTO</button>
           <button class="cbtn cbtn-n" id="map-btn-speed" onclick="mapToggleSpeed()">⚡ FAST</button>
         </div>
       </div>
@@ -592,7 +594,8 @@ function showPage(id) {
 }
 
 // ─── Constants ──────────────────────────────────
-const LOCS = [[0,0],[0,4],[4,0],[4,3],[2,2],[1,1],[1,3],[2,3],[3,1],[4,4],[0,2],[0,3],[1,4],[2,1],[3,4],[0,1],[1,0],[1,2],[2,0],[2,4],[3,0],[3,2],[3,3],[4,1],[4,2]];
+const LOCS = [[0,0],[0,1],[0,2],[0,3],[0,4],[0,5],[1,0],[1,2],[1,3],[1,5],[2,1],[2,2],[2,4],[2,5],[3,0],[3,1],[3,3],[3,4],[4,0],[4,2],[4,3],[4,5],[5,1],[5,3],[5,5]];
+const GRID_SIZE = 6;
 const LOC_LABELS = ['R','G','Y','B','P','O','J','S','M','A','K','T','C','E','D','L','N','Q','U','V','W','X','Z','H','I'];
 const LOC_COLORS = ['#ef4444','#10b981','#f5c842','#3b82f6','#f97316','#a855f7','#14b8a6','#ec4899','#84cc16','#06b6d4','#fb7185','#38bdf8','#22c55e','#f59e0b','#c084fc','#f43f5e','#2dd4bf','#818cf8','#bef264','#facc15','#fb923c','#67e8f9','#d946ef','#4ade80','#93c5fd'];
 const ACTION_NAMES = ['South','North','East','West','Pickup','Drop-off'];
@@ -675,6 +678,19 @@ function rideChoicePayload(source, live = false) {
   return { live, pickup, dropoff };
 }
 
+function randomRideChoicePayload(source, live = false) {
+  const pickup = Math.floor(Math.random() * RIDE_LOCATION_OPTIONS.length);
+  let dropoff = Math.floor(Math.random() * RIDE_LOCATION_OPTIONS.length);
+  while (dropoff === pickup) dropoff = Math.floor(Math.random() * RIDE_LOCATION_OPTIONS.length);
+  const ids = RIDE_SELECT_IDS[source] || RIDE_SELECT_IDS.sim;
+  const pickEl = document.getElementById(ids[0]);
+  const dropEl = document.getElementById(ids[1]);
+  if (pickEl) pickEl.value = String(pickup);
+  if (dropEl) dropEl.value = String(dropoff);
+  syncRideSelectors(source);
+  return { live, pickup, dropoff };
+}
+
 // ─── State ──────────────────────────────────────
 let simRunning = false;
 let simInterval = null;
@@ -682,6 +698,8 @@ let simSpeed = 350;
 let rideHistory = [];
 let visitedCells = new Set();
 let currentGridState = null;
+let autoLoopRunning = false;
+let mapAutoLoopRunning = false;
 
 // ─── API helpers ────────────────────────────────
 async function api(path, opts = {}) {
@@ -699,21 +717,29 @@ async function api(path, opts = {}) {
 }
 
 // ─── Hero grid (static) ──────────────────────────
+function gridCellClasses(baseClass, r, c, hasLocation = false) {
+  const classes = [baseClass];
+  if (hasLocation) classes.push('city-cell');
+  return classes.join(' ');
+}
+
 function initHeroGrid() {
   const g = document.getElementById('hero-grid');
   const taxi = [1,2], pickup = [0,0], drop = [4,3];
-  const traffic = [[0,.7,0,0,0],[0,0,0,.6,0],[0,0,0,0,0],[0,0,.5,0,0],[0,0,0,0,0]];
-  const weather = [[0,0,0,.6,0],[0,0,0,0,.4],[0,.5,0,0,0],[0,0,0,0,0],[.4,0,0,0,0]];
+  const traffic = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(0));
+  const weather = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(0));
+  [[0,1,.7],[1,3,.6],[3,2,.5],[5,4,.45]].forEach(([r,c,v]) => traffic[r][c] = v);
+  [[0,3,.6],[1,4,.4],[2,1,.5],[4,0,.4],[5,5,.5]].forEach(([r,c,v]) => weather[r][c] = v);
   g.innerHTML = '';
-  for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+  for (let r = 0; r < GRID_SIZE; r++) for (let c = 0; c < GRID_SIZE; c++) {
     const cell = document.createElement('div');
-    cell.className = 'pcell';
+    const li = LOCS.findIndex(l=>l[0]===r&&l[1]===c);
+    cell.className = gridCellClasses('pcell', r, c, li >= 0);
     if (r===taxi[0]&&c===taxi[1]) { cell.classList.add('taxi'); cell.textContent='🚕'; }
     else if (r===pickup[0]&&c===pickup[1]) { cell.classList.add('pickup'); cell.textContent='R'; }
     else if (r===drop[0]&&c===drop[1]) { cell.classList.add('dropoff'); cell.textContent='B'; }
     else if (traffic[r][c]>.4) { cell.classList.add('traffic'); }
     else if (weather[r][c]>.4) { cell.classList.add('weather'); }
-    const li = LOCS.findIndex(l=>l[0]===r&&l[1]===c);
     if (li>=0&&!(r===taxi[0]&&c===taxi[1])&&!(r===pickup[0]&&c===pickup[1])) {
       cell.textContent=LOC_LABELS[li]; cell.style.color=LOC_COLORS[li];
     }
@@ -726,9 +752,10 @@ let simCells = [];
 function initSimGrid() {
   const g = document.getElementById('sim-grid');
   g.innerHTML = ''; simCells = [];
-  for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+  for (let r = 0; r < GRID_SIZE; r++) for (let c = 0; c < GRID_SIZE; c++) {
     const cell = document.createElement('div');
-    cell.className = 'scell';
+    const hasLocation = LOCS.some(l => l[0] === r && l[1] === c);
+    cell.className = gridCellClasses('scell', r, c, hasLocation);
     g.appendChild(cell);
     simCells.push({ el: cell, r, c });
   }
@@ -740,7 +767,8 @@ function renderGrid(state) {
   const { taxi, pass_loc, pass_on_board, destination, locs, cells } = state;
 
   simCells.forEach(({ el, r, c }) => {
-    el.className = 'scell';
+    const hasLocation = locs.some(l => l.row===r && l.col===c);
+    el.className = gridCellClasses('scell', r, c, hasLocation);
     el.textContent = '';
     el.style.cssText = '';
 
@@ -903,8 +931,15 @@ function stopSim() {
   clearInterval(simInterval); simInterval = null; simRunning = false;
 }
 
+function stopAutoRun() {
+  autoLoopRunning = false;
+  const btn = document.getElementById('btn-auto');
+  if (btn) btn.textContent = '⚡ AUTO-RUN';
+}
+
 function resetSim() {
   stopSim();
+  stopAutoRun();
   visitedCells.clear();
   document.getElementById('btn-run').textContent = '▶ START RIDE';
   setSimStatus('READY', 'var(--text2)');
@@ -1174,7 +1209,7 @@ let mapHazardCells = [];
 let mapCellCoords = {};
 let mapPickMode = 'pickup';
 
-// Real Hyderabad coordinates for the 5×5 grid
+// Real Hyderabad coordinates for the grid
 // Mapped across a bounding box: SW(17.33,78.42) → NE(17.47,78.52)
 const MAP_LAT_MIN = 17.330, MAP_LAT_MAX = 17.470;
 const MAP_LNG_MIN = 78.420, MAP_LNG_MAX = 78.520;
@@ -1258,9 +1293,10 @@ function gridToLatLng(row, col) {
   if (keyed) return keyed;
 
   // Uses slightly shifted nodes so the live map follows original route corridors instead of a visible square grid.
-  const baseLat = MAP_LAT_MAX - (row / 4) * (MAP_LAT_MAX - MAP_LAT_MIN);
-  const baseLng = MAP_LNG_MIN + (col / 4) * (MAP_LNG_MAX - MAP_LNG_MIN);
-  const [latOffset, lngOffset] = ROAD_NODE_OFFSETS[row][col];
+  const denominator = Math.max(GRID_SIZE - 1, 1);
+  const baseLat = MAP_LAT_MAX - (row / denominator) * (MAP_LAT_MAX - MAP_LAT_MIN);
+  const baseLng = MAP_LNG_MIN + (col / denominator) * (MAP_LNG_MAX - MAP_LNG_MIN);
+  const [latOffset, lngOffset] = ROAD_NODE_OFFSETS[row]?.[col] || [0, 0];
   let lat = baseLat + latOffset;
   let lng = baseLng + lngOffset;
 
@@ -1270,6 +1306,10 @@ function gridToLatLng(row, col) {
     lng = MAP_LOCS_ADJUSTED[locIndex].lng;
   }
   return [lat, lng];
+}
+
+function mapCellName(row, col) {
+  return MAP_CELL_NAMES[row]?.[col] || `Grid cell ${row + 1}-${col + 1}`;
 }
 
 function syncMapCellCoords(state) {
@@ -1363,10 +1403,10 @@ function drawBaseRoadNetwork() {
   if (!mapObj) return;
   if (baseRoadLayer) baseRoadLayer.clearLayers();
 
-  for (let r = 0; r < 5; r++) {
-    for (let c = 0; c < 5; c++) {
+  for (let r = 0; r < GRID_SIZE; r++) {
+    for (let c = 0; c < GRID_SIZE; c++) {
       const start = gridToLatLng(r, c);
-      if (c < 4) {
+      if (c < GRID_SIZE - 1) {
         const east = gridToLatLng(r, c + 1);
         const roadPath = getRoadSegmentPath(start, east);
         L.polyline(roadPath, {
@@ -1384,7 +1424,7 @@ function drawBaseRoadNetwork() {
           lineJoin: 'round'
         }).addTo(baseRoadLayer);
       }
-      if (r < 4) {
+      if (r < GRID_SIZE - 1) {
         const south = gridToLatLng(r + 1, c);
         const roadPath = getRoadSegmentPath(start, south);
         L.polyline(roadPath, {
@@ -1421,7 +1461,7 @@ function renderHazardZones(state) {
     const severity = Math.max(cell.traffic, cell.weather);
     const roadPoints = cellRoadPoints(cell);
     if (cell.traffic > 0.2) {
-      const trafficPopup = `<b>Traffic zone</b><br>${MAP_CELL_NAMES[cell.row][cell.col]}<br>Intensity: ${cell.traffic.toFixed(2)}`;
+      const trafficPopup = `<b>Traffic zone</b><br>${mapCellName(cell.row, cell.col)}<br>Intensity: ${cell.traffic.toFixed(2)}`;
       if (roadPoints.length >= 2) {
         L.polyline(roadPoints, {
           color: '#ef4444',
@@ -1447,7 +1487,7 @@ function renderHazardZones(state) {
         weight: 1.4,
         fillColor: '#8b5cf6',
         fillOpacity: 0.10 + (cell.weather * 0.08)
-      }).bindPopup(`<b>Weather zone</b><br>${MAP_CELL_NAMES[cell.row][cell.col]}<br>Intensity: ${cell.weather.toFixed(2)}`).addTo(hazardLayer);
+      }).bindPopup(`<b>Weather zone</b><br>${mapCellName(cell.row, cell.col)}<br>Intensity: ${cell.weather.toFixed(2)}`).addTo(hazardLayer);
     }
     L.circleMarker([lat, lng], {
       radius: 4 + (severity * 3),
@@ -1475,7 +1515,7 @@ function renderHazardZones(state) {
           <span>${primaryType} zone</span>
           <span>${primaryValue.toFixed(2)}</span>
         </div>
-        <div class="map-zone-name">${MAP_CELL_NAMES[cell.row][cell.col]}</div>
+        <div class="map-zone-name">${mapCellName(cell.row, cell.col)}</div>
         ${trafficMeta}
         <div class="map-zone-meta">Traffic ${cell.traffic.toFixed(2)} · Weather ${cell.weather.toFixed(2)}</div>
       </div>
@@ -1895,6 +1935,121 @@ async function mapAutoRun() {
     replayNext();
   }
   replayNext();
+}
+
+// Final auto-run handlers: random rides repeat until the user presses the same auto button again.
+async function runAuto() {
+  if (autoLoopRunning) {
+    stopAutoRun();
+    setSimStatus('STOPPED', 'var(--text2)');
+    addLog('// Auto-run stopped by user', '');
+    return;
+  }
+  stopSim();
+  autoLoopRunning = true;
+  const btn = document.getElementById('btn-auto');
+  if (btn) btn.textContent = '■ STOP AUTO';
+  setSimStatus('AUTO-RUN', 'var(--accent5)');
+  clearLog();
+
+  while (autoLoopRunning) {
+    visitedCells.clear();
+    const body = randomRideChoicePayload('sim', false);
+    addLog(`// Random ride: ${RIDE_LOCATION_OPTIONS[body.pickup]} -> ${RIDE_LOCATION_OPTIONS[body.dropoff]}`, 'lp');
+    const data = await api('/api/sim/auto', { method: 'POST', body });
+    if (!autoLoopRunning) break;
+    if (!data.ok) {
+      addLog(data.error || 'Train the model', 'lx');
+      setSimStatus('TRAIN REQUIRED', 'var(--accent4)');
+      stopAutoRun();
+      return;
+    }
+
+    const steps = data.steps || [];
+    steps.forEach(s => visitedCells.add(`${s.taxi.row},${s.taxi.col}`));
+    if (data.final_grid) renderGrid(data.final_grid);
+
+    for (const s of steps) {
+      if (!autoLoopRunning) break;
+      const msg = s.message || s.action_name;
+      addLog(msg, s.event === 'pickup' ? 'lp' : s.event === 'dropoff' ? 'ld' : '');
+      await wait(35);
+    }
+    if (!autoLoopRunning) break;
+
+    rideHistory.push(data.total_reward);
+    renderRideHistory();
+    updateMetrics({ total_reward: data.total_reward, steps: data.total_steps, energy: data.energy, sat_bonus: data.sat_bonus, done: true });
+    addLog(`Auto-run complete · ${data.total_steps} steps · reward: ${data.total_reward.toFixed(1)}`, 'lr');
+    setSimStatus('NEXT RANDOM RIDE', 'var(--accent5)');
+    await wait(300);
+  }
+  stopAutoRun();
+  setSimStatus('STOPPED', 'var(--text2)');
+}
+
+async function mapAutoRun() {
+  if (mapAutoLoopRunning) {
+    mapAutoLoopRunning = false;
+    const btn = document.getElementById('map-btn-auto');
+    if (btn) btn.textContent = '⚡ AUTO';
+    document.getElementById('mm-status').textContent = 'STOPPED';
+    return;
+  }
+
+  mapStop();
+  mapAutoLoopRunning = true;
+  const btn = document.getElementById('map-btn-auto');
+  if (btn) btn.textContent = '■ STOP AUTO';
+  document.getElementById('mm-status').textContent = 'AUTO';
+  document.getElementById('map-log').innerHTML = '';
+
+  while (mapAutoLoopRunning) {
+    const body = randomRideChoicePayload('map', false);
+    mapAddLog(`Random ride: ${RIDE_LOCATION_OPTIONS[body.pickup]} -> ${RIDE_LOCATION_OPTIONS[body.dropoff]}`, 'pick');
+    const data = await api('/api/sim/auto', { method: 'POST', body });
+    if (!mapAutoLoopRunning) break;
+    if (!data.ok || !data.steps) {
+      document.getElementById('mm-status').textContent = 'TRAIN REQUIRED';
+      document.getElementById('mm-status').style.color = 'var(--accent4)';
+      mapAddLog(data.error || 'Train the model', 'warn');
+      break;
+    }
+
+    mapTrailCoords = [];
+    mapHazardCells = data.final_grid?.cells || mapHazardCells;
+    syncMapCellCoords(data.final_grid);
+    if (trailLayer) trailLayer.clearLayers();
+    drawPlannedRoute(data.final_grid?.planned_route);
+
+    for (const step of data.steps) {
+      if (!mapAutoLoopRunning) break;
+      const [lat, lng] = gridToLatLng(step.taxi.row, step.taxi.col);
+      const trailSegment = await animateTaxiTo(lat, lng, !!step.pass_on_board);
+      appendTrailSegment(trailSegment);
+      drawPlannedRoute(step.planned_route);
+      redrawTrail();
+      renderHazardZones({ cells: mapHazardCells });
+      document.getElementById('mm-steps').textContent = step.step;
+      document.getElementById('mm-reward').textContent = step.total_reward.toFixed(1);
+      const e = step.energy ?? 100;
+      document.getElementById('mm-energy').textContent = e.toFixed(1);
+      document.getElementById('mm-energy-bar').style.width = Math.max(0, e) + '%';
+      const msg = step.decision_reason ? `${step.action_name} | Why: ${step.decision_reason}` : (step.message || step.action_name);
+      mapAddLog(msg, step.event === 'pickup' ? 'pick' : step.event === 'dropoff' ? 'drop' : '');
+      await wait(Math.max(40, mapSpeed === 700 ? 120 : 20));
+    }
+    if (!mapAutoLoopRunning) break;
+
+    document.getElementById('mm-status').textContent = 'NEXT RANDOM RIDE';
+    document.getElementById('mm-status').style.color = 'var(--accent5)';
+    redrawTrail('#10b981');
+    mapAddLog(`Auto-run complete · ${data.total_steps} steps · reward: ${data.total_reward.toFixed(1)}`, 'drop');
+    await wait(350);
+  }
+
+  mapAutoLoopRunning = false;
+  if (btn) btn.textContent = '⚡ AUTO';
 }
 
 </script>

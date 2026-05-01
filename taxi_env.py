@@ -5,12 +5,13 @@ import numpy as np
 import random
 
 # Fixed pickup/dropoff locations across the grid.
+GRID_SIZE = 6
 LOCS = [
-    (0, 0), (0, 4), (4, 0), (4, 3), (2, 2),
-    (1, 1), (1, 3), (2, 3), (3, 1), (4, 4),
-    (0, 2), (0, 3), (1, 4), (2, 1), (3, 4),
-    (0, 1), (1, 0), (1, 2), (2, 0), (2, 4),
-    (3, 0), (3, 2), (3, 3), (4, 1), (4, 2),
+    (0, 0), (0, 1), (0, 2), (0, 3), (0, 4),
+    (0, 5), (1, 0), (1, 2), (1, 3), (1, 5),
+    (2, 1), (2, 2), (2, 4), (2, 5), (3, 0),
+    (3, 1), (3, 3), (3, 4), (4, 0), (4, 2),
+    (4, 3), (4, 5), (5, 1), (5, 3), (5, 5),
 ]
 LOC_LABELS = [
     'R', 'G', 'Y', 'B', 'P', 'O', 'J', 'S', 'M', 'A',
@@ -37,14 +38,14 @@ MOVES = [(1, 0), (-1, 0), (0, 1), (0, -1)]
 
 NUM_LOCATIONS = len(LOCS)
 PASSENGER_STATES = NUM_LOCATIONS + 1
-NUM_STATES = 25 * PASSENGER_STATES * NUM_LOCATIONS
+NUM_STATES = (GRID_SIZE * GRID_SIZE) * PASSENGER_STATES * NUM_LOCATIONS
 NUM_ACTIONS = 6
 
 
 def encode_state(taxi_row, taxi_col, pass_loc, destination):
     """Encode (row, col, passenger, destination) into a dense integer state."""
     i = taxi_row
-    i = i * 5 + taxi_col
+    i = i * GRID_SIZE + taxi_col
     i = i * PASSENGER_STATES + pass_loc
     i = i * NUM_LOCATIONS + destination
     return i
@@ -56,8 +57,8 @@ def decode_state(state):
     state //= NUM_LOCATIONS
     pass_loc = state % PASSENGER_STATES
     state //= PASSENGER_STATES
-    taxi_col = state % 5
-    state //= 5
+    taxi_col = state % GRID_SIZE
+    state //= GRID_SIZE
     taxi_row = state
     return taxi_row, taxi_col, pass_loc, destination
 
@@ -71,8 +72,8 @@ class TaxiEnv:
     def reset(self, seed=None):
         if seed is not None:
             self.rng = random.Random(seed)
-        self.taxi_row = self.rng.randint(0, 4)
-        self.taxi_col = self.rng.randint(0, 4)
+        self.taxi_row = self.rng.randint(0, GRID_SIZE - 1)
+        self.taxi_col = self.rng.randint(0, GRID_SIZE - 1)
         self.pass_loc = self.rng.randint(0, NUM_LOCATIONS - 1)
         self.destination = self.rng.randint(0, NUM_LOCATIONS - 1)
         while self.destination == self.pass_loc:
@@ -89,7 +90,7 @@ class TaxiEnv:
         """Check whether a move stays inside the grid."""
         dr, dc = MOVES[action]
         nr, nc = row + dr, col + dc
-        if nr < 0 or nr > 4 or nc < 0 or nc > 4:
+        if nr < 0 or nr >= GRID_SIZE or nc < 0 or nc >= GRID_SIZE:
             return False, nr, nc
         return True, nr, nc
 
@@ -175,13 +176,13 @@ class TaxiEnvExtended(TaxiEnv):
 
     def _generate_hazards(self, seed=None):
         rng = np.random.RandomState(seed) if seed is not None else self.np_rng
-        self.traffic_grid = np.zeros((5, 5))
-        self.weather_grid = np.zeros((5, 5))
+        self.traffic_grid = np.zeros((GRID_SIZE, GRID_SIZE))
+        self.weather_grid = np.zeros((GRID_SIZE, GRID_SIZE))
         for _ in range(6):
-            r, c = rng.randint(0, 5, 2)
+            r, c = rng.randint(0, GRID_SIZE, 2)
             self.traffic_grid[r][c] = rng.uniform(0.3, 1.0)
         for _ in range(5):
-            r, c = rng.randint(0, 5, 2)
+            r, c = rng.randint(0, GRID_SIZE, 2)
             self.weather_grid[r][c] = rng.uniform(0.2, 1.0)
 
     def reset(self, seed=None):
@@ -259,8 +260,8 @@ class TaxiEnvExtended(TaxiEnv):
     def get_grid_state(self):
         """Return full grid state for frontend rendering."""
         cells = []
-        for r in range(5):
-            for c in range(5):
+        for r in range(GRID_SIZE):
+            for c in range(GRID_SIZE):
                 cells.append({
                     'row': r,
                     'col': c,

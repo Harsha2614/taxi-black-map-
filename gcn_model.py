@@ -1,5 +1,5 @@
 """
-Small NumPy graph convolution model for the 5x5 taxi grid.
+Small NumPy graph convolution model for the taxi grid.
 
 The model learns a per-cell traversal cost from graph-structured episode
 experience. It is intentionally dependency-light so the demo can run without
@@ -7,10 +7,9 @@ PyTorch.
 """
 import numpy as np
 
-from taxi_env import LOCS, MOVES
+from taxi_env import GRID_SIZE, LOCS, MOVES
 
 
-GRID_SIZE = 5
 NUM_NODES = GRID_SIZE * GRID_SIZE
 
 
