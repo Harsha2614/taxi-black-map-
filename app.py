@@ -9,6 +9,7 @@ import threading
 import heapq
 import urllib.parse
 import urllib.request
+import urllib.error
 import numpy as np
 from flask import Flask, jsonify, request, render_template, Response, stream_with_context
 
@@ -16,6 +17,25 @@ from taxi_env import TaxiEnvExtended, QLearningAgent, LOC_LABELS, LOC_COLORS, LO
 from gcn_model import TaxiGCNCostModel
 
 app = Flask(__name__)
+
+
+def _load_local_env(path='.env'):
+    """Load simple KEY=value pairs for local Flask runs."""
+    if not os.path.exists(path):
+        return
+    with open(path, 'r', encoding='utf-8') as env_file:
+        for line in env_file:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, value = line.split('=', 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+_load_local_env()
 
 # ──────────────────────────────────────────────
 #  GLOBAL STATE
@@ -162,6 +182,8 @@ def train_status():
         'trained': agent.trained,
         'stats': agent.training_stats() if agent.trained else {},
         'gcn': gcn_model.summary() if gcn_model else {'trained': False},
+        'num_states': NUM_STATES,
+        'num_actions': 6,
     })
 
 
@@ -226,6 +248,7 @@ def sim_new():
         'ok': True,
         'seed': seed,
         'hazard_source': hazard_source,
+        'live_warnings': getattr(sim_env, 'live_warnings', []),
         'state': grid,
         'message': (f"New ride — Taxi at ({grid['taxi']['row']},{grid['taxi']['col']}) · "
                     f"Pick up {grid['pass_label']} · Drop at {grid['dest_label']}"),
@@ -534,8 +557,23 @@ def _grid_lat_lng(row, col):
 def _read_json_url(url, timeout=6):
     """Read a small JSON API response."""
     request_obj = urllib.request.Request(url, headers={'User-Agent': 'taxi-ai-demo/1.0'})
-    with urllib.request.urlopen(request_obj, timeout=timeout) as response:
-        return json.loads(response.read().decode('utf-8'))
+    try:
+        with urllib.request.urlopen(request_obj, timeout=timeout) as response:
+            return json.loads(response.read().decode('utf-8'))
+    except urllib.error.HTTPError as exc:
+        body = ''
+        try:
+            body = exc.read().decode('utf-8', errors='replace')[:300]
+        except Exception:
+            body = ''
+        print(f"External API HTTP error {exc.code} for {url}: {body}", flush=True)
+        raise RuntimeError(f"HTTP {exc.code}: {body or exc.reason}") from exc
+    except urllib.error.URLError as exc:
+        print(f"External API network error for {url}: {exc.reason}", flush=True)
+        raise RuntimeError(f"Network error: {exc.reason}") from exc
+    except TimeoutError as exc:
+        print(f"External API timeout for {url}", flush=True)
+        raise RuntimeError("Request timed out") from exc
 
 
 def _fetch_tomtom_traffic(lat, lng, api_key):
@@ -545,7 +583,7 @@ def _fetch_tomtom_traffic(lat, lng, api_key):
         'unit': 'kmph',
     })
     url = f'https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/13/json?{params}'
-    data = _read_json_url(url)
+    data = _read_json_url(url, timeout=2)
     flow = data.get('flowSegmentData', {})
     current = float(flow.get('currentSpeed') or 0.0)
     free = float(flow.get('freeFlowSpeed') or 0.0)
@@ -596,7 +634,7 @@ def _fetch_weatherapi(lat, lng, api_key):
         'aqi': 'no',
     })
     url = f'https://api.weatherapi.com/v1/current.json?{params}'
-    data = _read_json_url(url)
+    data = _read_json_url(url, timeout=4)
     current = data.get('current') or {}
     condition_data = current.get('condition') or {}
     precipitation = float(current.get('precip_mm') or 0.0)
@@ -647,7 +685,7 @@ def _fetch_tomtom_route_points(cells):
         'computeTravelTimeFor': 'all',
     })
     url = f'https://api.tomtom.com/routing/1/calculateRoute/{encoded_locations}/json?{params}'
-    data = _read_json_url(url, timeout=8)
+    data = _read_json_url(url, timeout=2)
     route = (data.get('routes') or [{}])[0]
     points = []
     for leg in route.get('legs', []) or []:
@@ -691,18 +729,45 @@ def _fetch_live_hazard_payload():
     weather_grid = np.zeros((GRID_SIZE, GRID_SIZE), dtype=float)
     samples = []
     center_lat, center_lng = _grid_lat_lng(GRID_SIZE // 2, GRID_SIZE // 2)
+    weather_failed = False
     try:
         city_weather, city_weather_meta = _fetch_weatherapi(center_lat, center_lng, weather_key)
     except Exception as exc:
-        raise RuntimeError(f"WeatherAPI fetch failed: {exc}") from exc
+        city_weather = 0.0
+        city_weather_meta = {'error': str(exc), 'condition': 'unavailable'}
+        weather_failed = True
 
+    traffic_failures = []
+    traffic_successes = 0
     for row in range(GRID_SIZE):
         for col in range(GRID_SIZE):
             lat, lng = _grid_lat_lng(row, col)
-            try:
-                traffic, traffic_meta = _fetch_tomtom_traffic(lat, lng, tomtom_key)
-            except Exception as exc:
-                raise RuntimeError(f"TomTom traffic fetch failed at cell ({row},{col}): {exc}") from exc
+            skip_traffic_fetch = traffic_successes == 0 and len(traffic_failures) >= 4
+            if skip_traffic_fetch:
+                traffic = 0.0
+                traffic_meta = {
+                    'error': 'TomTom traffic skipped after repeated API failures',
+                    'current_speed': None,
+                    'free_flow_speed': None,
+                    'confidence': 0.0,
+                    'road_closed': False,
+                    'road_points': [],
+                }
+            else:
+                try:
+                    traffic, traffic_meta = _fetch_tomtom_traffic(lat, lng, tomtom_key)
+                    traffic_successes += 1
+                except Exception as exc:
+                    traffic = 0.0
+                    traffic_meta = {
+                        'error': str(exc),
+                        'current_speed': None,
+                        'free_flow_speed': None,
+                        'confidence': 0.0,
+                        'road_closed': False,
+                        'road_points': [],
+                    }
+                    traffic_failures.append({'row': row, 'col': col, 'error': str(exc)})
 
             traffic_grid[row][col] = traffic
             weather_grid[row][col] = city_weather
@@ -717,11 +782,19 @@ def _fetch_live_hazard_payload():
                 'weather_meta': city_weather_meta,
             })
 
+    source_bits = []
+    source_bits.append('tomtom-partial' if traffic_failures else 'tomtom')
+    source_bits.append('weatherapi-fallback' if weather_failed else 'weatherapi')
+    warnings = traffic_failures[:8]
+    if weather_failed:
+        warnings = [{'row': None, 'col': None, 'error': city_weather_meta['error']}] + warnings
+
     return {
         'traffic_grid': traffic_grid.round(3).tolist(),
         'weather_grid': weather_grid.round(3).tolist(),
-        'hazard_source': 'live:tomtom+weatherapi',
+        'hazard_source': 'live:' + '+'.join(source_bits),
         'live_samples': samples,
+        'live_warnings': warnings,
         'fetched_at': int(time.time()),
     }
 
@@ -732,6 +805,7 @@ def _apply_live_sample_metadata(env, data):
         env.live_samples = samples
         env.hazard_source = data.get('hazard_source', 'live')
         env.hazards_fetched_at = data.get('fetched_at')
+        env.live_warnings = data.get('live_warnings', [])
 
 
 def _apply_external_hazards(env, data):

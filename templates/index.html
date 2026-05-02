@@ -171,13 +171,155 @@ h1 .hl{color:var(--accent);}
 #training-chart-wrap{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.2rem;}
 #training-chart-wrap canvas{width:100%!important;}
 
+/* ── ADVANCED UI POLISH ── */
+body{
+  background:
+    linear-gradient(180deg,rgba(245,200,66,.025),transparent 260px),
+    linear-gradient(90deg,rgba(16,185,129,.018),transparent 42%,rgba(59,130,246,.016)),
+    var(--bg);
+}
+body::before{
+  content:'';
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:-1;
+  background-image:
+    linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);
+  background-size:34px 34px;
+  mask-image:linear-gradient(to bottom,rgba(0,0,0,.9),rgba(0,0,0,.18));
+}
+nav{
+  height:64px;
+  background:rgba(10,12,16,.86);
+  backdrop-filter:blur(16px);
+  box-shadow:0 10px 28px rgba(0,0,0,.22);
+}
+.nav-logo{display:flex;align-items:center;gap:8px;font-weight:700;}
+.nav-logo::before{
+  content:'';
+  width:10px;
+  height:10px;
+  border-radius:3px;
+  background:linear-gradient(135deg,var(--accent),var(--accent3));
+  box-shadow:0 0 18px rgba(245,200,66,.34);
+}
+.nav-tabs{
+  background:rgba(255,255,255,.025);
+  border:1px solid rgba(255,255,255,.05);
+  border-radius:8px;
+  padding:4px;
+  gap:2px;
+}
+.nav-tab{
+  height:38px;
+  border-bottom:none;
+  border-radius:6px;
+  padding:0 .9rem;
+}
+.nav-tab.active{
+  color:#0a0c10;
+  background:var(--accent);
+  border-bottom-color:transparent;
+  box-shadow:0 8px 20px rgba(245,200,66,.14);
+}
+.status-pill{
+  border-radius:7px;
+  background:rgba(16,185,129,.08);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.025);
+}
+.hero{padding:3rem 2rem 1.5rem;gap:2rem;}
+.hero > div:first-child{border-left:1px solid rgba(245,200,66,.24);padding-left:1.25rem;}
+.hero-tag{color:#f3d46b;}
+h1{letter-spacing:0;}
+.hero-desc{max-width:58ch;}
+.btn-p,.btn-o,.train-btn,.cbtn{min-height:34px;box-shadow:0 8px 18px rgba(0,0,0,.14);}
+.btn-p,.train-btn{background:linear-gradient(135deg,var(--accent),#f59e0b);}
+.btn-o{background:rgba(255,255,255,.025);}
+.grid-canvas,.card,.mc,.train-form,.stat-card,.qt-detail,.bench-card,#training-chart-wrap{
+  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012)),var(--card);
+  border-color:rgba(255,255,255,.075);
+  box-shadow:0 18px 40px rgba(0,0,0,.18);
+}
+.grid-canvas{border-radius:10px;}
+.preview-grid,.sim-grid{
+  padding:8px;
+  border-radius:9px;
+  background:rgba(0,0,0,.16);
+  border:1px solid rgba(255,255,255,.035);
+}
+.pcell,.scell{border-radius:7px;background:#0f131b;}
+.pcell.city-cell,.scell.city-cell{
+  position:relative;
+  background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015)),#141923;
+}
+.pcell.city-cell::before,.scell.city-cell::before{
+  content:'';
+  position:absolute;
+  inset:4px;
+  border-radius:5px;
+  border:1px solid rgba(255,255,255,.035);
+  pointer-events:none;
+}
+.scell:hover{transform:translateY(-1px);border-color:rgba(245,200,66,.35);}
+.card-hd{background:rgba(255,255,255,.018);}
+.main-wrap{max-width:1280px;grid-template-columns:minmax(0,1.55fr) 360px;}
+.stats-bar{
+  max-width:1280px;
+  margin:0 auto;
+  padding:0 2rem;
+  background:transparent;
+  border-top:none;
+  gap:.8rem;
+}
+.stat-block{
+  border:1px solid rgba(255,255,255,.06);
+  border-radius:9px;
+  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012)),var(--bg2);
+  padding:1rem 1.1rem;
+}
+.stat-val,.bench-val,.stat-c-val,.bnum{letter-spacing:0;}
+.ride-choice-row{
+  background:rgba(0,0,0,.13);
+  border:1px solid rgba(255,255,255,.045);
+  border-radius:8px;
+  padding:8px;
+}
+.ride-choice-field select,.form-input{border-radius:7px;background:#0d1118;}
+.ctrl-row,.map-ctrl-row{gap:8px;}
+.cbtn{border-radius:7px;letter-spacing:0;}
+.log-panel,.train-log,.map-log{background:#080b10;border-color:rgba(255,255,255,.06);}
+.le,.map-log-entry{padding:2px 0;}
+.m-stack{gap:1rem;}
+.mc{border-radius:9px;}
+.prog,.prog-track,.map-prog{background:#080b10;}
+.train-wrap,.qt-wrap,.analytics-wrap{max-width:1180px;}
+.train-form{border-radius:10px;}
+.stats-grid,.bench-grid{gap:.9rem;}
+.hm-grid{
+  gap:4px;
+  padding:10px;
+  background:#080b10;
+  border:1px solid rgba(255,255,255,.045);
+  border-radius:9px;
+}
+.hm-cell{border-radius:4px;}
+
 /* ── SCROLLBAR ── */
 ::-webkit-scrollbar{width:4px;} ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
 
 /* ── RESPONSIVE ── */
 @media(max-width:800px){
+  nav{height:auto;min-height:64px;align-items:flex-start;gap:.8rem;padding:.8rem 1rem;flex-wrap:wrap;}
+  .nav-tabs{order:3;width:100%;overflow-x:auto;justify-content:flex-start;}
+  .nav-tab{white-space:nowrap;}
   .hero,.main-wrap{grid-template-columns:1fr;} .stats-bar,.form-grid,.bench-grid{grid-template-columns:repeat(2,1fr);}
+  .stats-bar{padding:0 1rem;}
+  .main-wrap,.train-wrap,.qt-wrap,.analytics-wrap{padding:1rem;}
+  .hero{padding:1.5rem 1rem;}
+  .main-wrap{grid-template-columns:1fr;}
 }
 </style>
 </head>
@@ -199,9 +341,9 @@ h1 .hl{color:var(--accent);}
 <div id="page-sim" class="page active">
   <div class="hero">
     <div>
-      <div class="hero-tag">Final Year Project · AI &amp; Reinforcement Learning</div>
-      <h1>Autonomous Taxi<br>Navigation via<br><span class="hl">Q-Learning</span></h1>
-      <p class="hero-desc">Train the taxi agent from scratch, then simulate a ride that follows an A* shortest path with traffic and weather awareness layered into the route selection.</p>
+      <div class="hero-tag">Q-learning, GCN &amp; Reinforcement Learning</div>
+      <h1>Autonomous Taxi Navigation<br>with Explainable AI<br><span class="hl"> via Q-learning and GCN</span></h1>
+      <p class="hero-desc">Train a Q-learning taxi agent on a 6×6 Hyderabad grid, then test random or selected rides using GCN-based route costs, live traffic, weather risk, energy use, and reward-driven navigation.</p>
       <div class="cta-row">
         <button class="btn-p" onclick="newRide();document.getElementById('sim-section').scrollIntoView({behavior:'smooth'})">Run Simulation</button>
         <button class="btn-o" onclick="showPage('train')">Retrain Model</button>
@@ -225,7 +367,7 @@ h1 .hl{color:var(--accent);}
 
   <div class="stats-bar">
     <div class="stat-block"><div class="stat-val" id="sb-episodes">10,000</div><div class="stat-lbl">Training Episodes</div><div class="stat-sub">Fully converged</div></div>
-    <div class="stat-block"><div class="stat-val">500</div><div class="stat-lbl">Q-Table States</div><div class="stat-sub">6 actions each</div></div>
+    <div class="stat-block"><div class="stat-val" id="sb-states">23,400</div><div class="stat-lbl">Q-Table States</div><div class="stat-sub" id="sb-actions">6 actions each</div></div>
     <div class="stat-block"><div class="stat-val">0.10</div><div class="stat-lbl">Final ε Epsilon</div><div class="stat-sub">Decay: 0.999/ep</div></div>
     <div class="stat-block"><div class="stat-val" id="sb-avg">—</div><div class="stat-lbl">Avg Reward (last 100)</div><div class="stat-sub" id="sb-avg-sub">Run benchmark</div></div>
   </div>
@@ -430,6 +572,68 @@ h1 .hl{color:var(--accent);}
     @keyframes taxibob { from{transform:translateY(0)} to{transform:translateY(-3px)} }
     .pulse-ring { border-radius:50%; animation:pulsering 1.5s ease-out infinite; }
     @keyframes pulsering { 0%{transform:scale(.8);opacity:1} 100%{transform:scale(2.2);opacity:0} }
+    .map-live-loading #map-main::after {
+      content:'Fetching live traffic and weather...';
+      position:absolute;
+      left:50%;
+      top:22px;
+      transform:translateX(-50%);
+      z-index:900;
+      padding:9px 14px 9px 34px;
+      border-radius:8px;
+      background:rgba(8,11,16,.88);
+      border:1px solid rgba(245,200,66,.34);
+      color:var(--accent);
+      font-family:var(--font-mono);
+      font-size:10px;
+      letter-spacing:.02em;
+      box-shadow:0 12px 30px rgba(0,0,0,.35);
+      backdrop-filter:blur(10px);
+    }
+    .map-live-loading #map-main::before {
+      content:'';
+      position:absolute;
+      left:calc(50% - 122px);
+      top:31px;
+      width:12px;
+      height:12px;
+      border-radius:50%;
+      border:2px solid rgba(245,200,66,.25);
+      border-top-color:var(--accent);
+      z-index:901;
+      animation:spinlive .75s linear infinite;
+    }
+    .map-live-loading #hyderabad-map { filter:saturate(1.1) contrast(1.05) brightness(.78); }
+    .map-live-loading #mm-status { color:var(--accent)!important; animation:statusblink .9s ease-in-out infinite alternate; }
+    .cbtn.is-loading {
+      position:relative;
+      pointer-events:none;
+      color:transparent!important;
+      border-color:rgba(245,200,66,.5)!important;
+      background:rgba(245,200,66,.14)!important;
+    }
+    .cbtn.is-loading::after {
+      content:'';
+      position:absolute;
+      width:13px;
+      height:13px;
+      left:50%;
+      top:50%;
+      margin-left:-6.5px;
+      margin-top:-6.5px;
+      border-radius:50%;
+      border:2px solid rgba(245,200,66,.25);
+      border-top-color:var(--accent);
+      animation:spinlive .75s linear infinite;
+    }
+    @keyframes spinlive { to{transform:rotate(360deg)} }
+    @keyframes statusblink { from{opacity:.55} to{opacity:1} }
+    #map-sidebar { background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.01)),var(--bg2); box-shadow:-16px 0 34px rgba(0,0,0,.18); }
+    #hyderabad-map { filter:saturate(.92) contrast(1.02); }
+    .map-panel { background:rgba(255,255,255,.012); }
+    .map-stat,.map-zone-item { border:1px solid rgba(255,255,255,.055); box-shadow:inset 0 0 0 1px rgba(255,255,255,.012); }
+    .loc-badge { background:rgba(255,255,255,.025)!important; box-shadow:inset 0 0 0 1px rgba(255,255,255,.018); }
+    .leaflet-control-zoom a { background:#0d1118!important; color:var(--text)!important; border-color:rgba(255,255,255,.08)!important; }
     @media(max-width:700px){ #map-container{grid-template-columns:1fr;grid-template-rows:55vh auto auto;} #map-sidebar{border-left:none;border-top:1px solid var(--border);max-height:none;} #hyderabad-map{min-height:55vh;} }
   </style>
 
@@ -527,7 +731,7 @@ h1 .hl{color:var(--accent);}
           <button class="cbtn cbtn-b" id="map-drop-mode" onclick="setMapPickMode('dropoff')">SET DROP-OFF</button>
           <button class="cbtn cbtn-y" id="map-btn-run" onclick="mapToggleRun()">▶ START</button>
           <button class="cbtn cbtn-n" onclick="mapNewRide()">↻ NEW RIDE</button>
-          <button class="cbtn cbtn-n" onclick="mapNewRide(true)">LIVE RIDE</button>
+          <button class="cbtn cbtn-n" id="map-btn-live" onclick="mapNewRide(true)">LIVE RIDE</button>
           <button class="cbtn cbtn-b" id="map-btn-auto" onclick="mapAutoRun()">⚡ AUTO</button>
           <button class="cbtn cbtn-n" id="map-btn-speed" onclick="mapToggleSpeed()">⚡ FAST</button>
         </div>
@@ -1178,6 +1382,8 @@ async function runBenchmark() {
 // ─── Nav status check ───────────────────────────
 async function checkStatus() {
   const data = await api('/api/train/status');
+  if (data.num_states) document.getElementById('sb-states').textContent = Number(data.num_states).toLocaleString();
+  if (data.num_actions) document.getElementById('sb-actions').textContent = `${data.num_actions} actions each`;
   if (data.trained) {
     const gcnText = data.gcn?.trained ? ' · GCN' : '';
     document.getElementById('nav-status').textContent = 'Model Trained' + gcnText + ' · ' + (data.stats?.avg_reward_last_100 ?? '') + ' avg';
@@ -1724,6 +1930,22 @@ function makePulseIcon(color, label) {
   });
 }
 
+function setMapLiveLoading(active) {
+  const container = document.getElementById('map-container');
+  const btn = document.getElementById('map-btn-live');
+  const status = document.getElementById('mm-status');
+  if (container) container.classList.toggle('map-live-loading', active);
+  if (btn) {
+    btn.classList.toggle('is-loading', active);
+    btn.disabled = active;
+    btn.textContent = active ? 'LIVE RIDE' : 'LIVE RIDE';
+  }
+  if (status && active) {
+    status.textContent = 'FETCHING LIVE';
+    status.style.color = 'var(--accent)';
+  }
+}
+
 async function mapNewRide(live = false) {
   mapStop();
   mapTrailCoords = [];
@@ -1731,15 +1953,25 @@ async function mapNewRide(live = false) {
   if (hazardLayer) hazardLayer.clearLayers();
   if (routeLayer) routeLayer.clearLayers();
   document.getElementById('map-log').innerHTML = '';
+  if (live) {
+    setMapLiveLoading(true);
+    document.getElementById('map-log').innerHTML = '<div class="map-log-entry drop">Contacting TomTom traffic and WeatherAPI...</div>';
+    document.getElementById('map-zones').innerHTML = '<div class="map-zone-empty">Fetching live traffic and weather signals...</div>';
+  }
 
   const body = rideChoicePayload('map', live);
-  if (!body) return;
+  if (!body) {
+    if (live) setMapLiveLoading(false);
+    return;
+  }
   const data = await api('/api/sim/new', { method: 'POST', body });
+  if (live) setMapLiveLoading(false);
   if (!data.ok || !data.state) {
-    document.getElementById('mm-status').textContent = 'TRAIN REQUIRED';
+    const isTrainError = (data.error || '').toLowerCase().includes('train');
+    document.getElementById('mm-status').textContent = isTrainError ? 'TRAIN REQUIRED' : 'LIVE ERROR';
     document.getElementById('mm-status').style.color = 'var(--accent4)';
     document.getElementById('map-log').innerHTML = `<div class="map-log-entry warn">${data.error || 'Train the model'}</div>`;
-    document.getElementById('map-zones').innerHTML = '<div class="map-zone-empty">Train the model</div>';
+    document.getElementById('map-zones').innerHTML = `<div class="map-zone-empty">${isTrainError ? 'Train the model' : 'Live API request failed'}</div>`;
     document.getElementById('map-btn-run').textContent = '▶ START';
     return;
   }
@@ -1771,6 +2003,7 @@ async function mapNewRide(live = false) {
   updateMapStats(s, {});
   mapAddLog(`New ride · Pickup: ${pickLoc.name} (${s.pass_label}) → Drop: ${dropLoc.name} (${s.dest_label})`, 'pick');
   if (data.hazard_source) mapAddLog(`Hazards: ${data.hazard_source}`, live ? 'drop' : '');
+  if (data.live_warnings?.length) mapAddLog(`Live traffic partial: ${data.live_warnings.length} cells used fallback traffic.`, 'warn');
   if (s.planned_route?.road_summary?.length_m) {
     const rs = s.planned_route.road_summary;
     mapAddLog(`Road route: ${(rs.length_m / 1000).toFixed(1)} km · delay ${rs.traffic_delay_s ?? 0}s`, 'drop');
