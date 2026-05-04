@@ -129,6 +129,13 @@ h1 .hl{color:var(--accent);}
 .rbar.neg{background:rgba(239,68,68,.35);}
 .rbar:hover{background:var(--accent);}
 .rbar.neg:hover{background:var(--accent4);}
+.history-table-wrap{margin-top:.75rem;display:none;max-height:260px;overflow:auto;border:1px solid rgba(255,255,255,.06);border-radius:8px;background:#080b10;}
+.history-table{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:9.5px;}
+.history-table th,.history-table td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.055);text-align:left;white-space:nowrap;}
+.history-table th{color:var(--text3);font-weight:700;text-transform:uppercase;background:rgba(255,255,255,.025);position:sticky;top:0;}
+.history-table td{color:var(--text2);}
+.history-table .ok{color:var(--accent3);}
+.history-table .fail{color:var(--accent4);}
 
 /* ── TRAIN PAGE ── */
 .train-wrap{max-width:900px;margin:0 auto;padding:2rem;}
@@ -428,6 +435,15 @@ h1{letter-spacing:0;}
         <div class="mc-lbl">Ride History</div>
         <div class="rbars" id="rbars"></div>
         <div class="sub-lbl" id="m-history">No rides yet</div>
+        <button class="cbtn cbtn-n" style="margin-top:.65rem;width:100%;" onclick="showRideHistoryFromDb()">VIEW DATABASE HISTORY</button>
+        <div class="history-table-wrap" id="history-table-wrap">
+          <table class="history-table">
+            <thead>
+              <tr><th>Time</th><th>Mode</th><th>Route</th><th>Reward</th><th>Steps</th><th>Status</th></tr>
+            </thead>
+            <tbody id="history-table-body"></tbody>
+          </table>
+        </div>
       </div>
       <div class="mc">
         <div class="mc-lbl">Satisfaction Score</div>
@@ -1110,6 +1126,7 @@ async function doStep() {
     document.getElementById('btn-run').textContent = '▶ START RIDE';
     rideHistory.push(data.total_reward);
     renderRideHistory();
+    loadRideHistoryFromDb();
     addLog(`✓ Ride done · Total reward: ${data.total_reward.toFixed(1)} · Satisfaction: ${data.sat_bonus.toFixed(1)}`, 'lr');
   }
 }
@@ -1193,6 +1210,7 @@ async function runAuto() {
       if (i >= steps.length) {
         rideHistory.push(data.total_reward);
         renderRideHistory();
+        loadRideHistoryFromDb();
         updateMetrics({ total_reward: data.total_reward, steps: data.total_steps, energy: data.energy, sat_bonus: data.sat_bonus, done: true });
         setSimStatus('COMPLETE', 'var(--accent3)');
         return;
@@ -1228,6 +1246,50 @@ function renderRideHistory() {
 }
 
 // ─── Training ────────────────────────────────────
+async function loadRideHistoryFromDb() {
+  const data = await api('/api/ride-history?limit=12');
+  if (!data.ok || !data.rides?.length) return;
+  rideHistory = data.rides
+    .slice()
+    .reverse()
+    .map(ride => Number(ride.total_reward || 0));
+  renderRideHistory();
+  document.getElementById('m-history').textContent =
+    `${data.rides.length} MySQL ride${data.rides.length!==1?'s':''} loaded`;
+}
+
+async function showRideHistoryFromDb() {
+  const wrap = document.getElementById('history-table-wrap');
+  const body = document.getElementById('history-table-body');
+  wrap.style.display = 'block';
+  body.innerHTML = '<tr><td colspan="6">Loading MySQL ride history...</td></tr>';
+  const data = await api('/api/ride-history?limit=25');
+  if (!data.ok) {
+    body.innerHTML = `<tr><td colspan="6">${data.error || 'MySQL ride history is not available yet.'}</td></tr>`;
+    return;
+  }
+  if (!data.rides?.length) {
+    body.innerHTML = '<tr><td colspan="6">No rides saved in MySQL yet. Complete a ride first.</td></tr>';
+    return;
+  }
+  body.innerHTML = data.rides.map(ride => {
+    const time = ride.created_at ? new Date(ride.created_at).toLocaleString() : '-';
+    const route = `${ride.pickup_label} -> ${ride.dropoff_label}`;
+    const reward = Number(ride.total_reward || 0).toFixed(1);
+    const status = ride.success ? '<span class="ok">SUCCESS</span>' : '<span class="fail">FAILED</span>';
+    return `<tr>
+      <td>${time}</td>
+      <td>${ride.mode || '-'}</td>
+      <td>${route}</td>
+      <td>${reward}</td>
+      <td>${ride.total_steps ?? '-'}</td>
+      <td>${status}</td>
+    </tr>`;
+  }).join('');
+  rideHistory = data.rides.slice().reverse().map(ride => Number(ride.total_reward || 0));
+  renderRideHistory();
+}
+
 let trainSSE = null;
 async function startTraining() {
   const btn = document.getElementById('btn-train');
@@ -1402,6 +1464,7 @@ async function checkStatus() {
   initHeroGrid();
   initSimGrid();
   await checkStatus();
+  await loadRideHistoryFromDb();
   setInterval(checkStatus, 5000);
 })();
 
@@ -2212,6 +2275,7 @@ async function runAuto() {
 
     rideHistory.push(data.total_reward);
     renderRideHistory();
+    loadRideHistoryFromDb();
     updateMetrics({ total_reward: data.total_reward, steps: data.total_steps, energy: data.energy, sat_bonus: data.sat_bonus, done: true });
     addLog(`Auto-run complete · ${data.total_steps} steps · reward: ${data.total_reward.toFixed(1)}`, 'lr');
     setSimStatus('NEXT RANDOM RIDE', 'var(--accent5)');

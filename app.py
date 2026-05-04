@@ -16,6 +16,13 @@ from flask import Flask, jsonify, request, render_template, Response, stream_wit
 from taxi_env import TaxiEnvExtended, QLearningAgent, LOC_LABELS, LOC_COLORS, LOCS, NUM_STATES, ACTION_NAMES, GRID_SIZE
 from gcn_model import TaxiGCNCostModel
 
+try:
+    import mysql.connector
+except ImportError:
+    mysql = None
+else:
+    mysql = mysql.connector
+
 app = Flask(__name__)
 
 
@@ -50,6 +57,9 @@ training_progress = {'status': 'idle', 'episode': 0, 'total': 0, 'reward': 0}
 sim_env = None
 sim_lock = threading.Lock()
 route_geometry_cache = {}
+db_lock = threading.Lock()
+db_initialized = False
+db_error = None
 
 # Hyderabad sample points matching the frontend's map grid.
 MAP_LAT_MIN = 17.330
@@ -97,6 +107,210 @@ def _require_trained_model():
     if not agent.trained:
         return jsonify({'ok': False, 'error': 'Train the model'}), 400
     return None
+
+
+def _mysql_config(include_database=True):
+    database = os.getenv('MYSQL_DATABASE')
+    user = os.getenv('MYSQL_USER')
+    if not database or not user:
+        return None
+    config = {
+        'host': os.getenv('MYSQL_HOST', '127.0.0.1'),
+        'port': int(os.getenv('MYSQL_PORT', '3306')),
+        'user': user,
+        'password': os.getenv('MYSQL_PASSWORD', ''),
+        'connection_timeout': 2,
+    }
+    if include_database:
+        config['database'] = database
+    return config
+
+
+def _mysql_connection(include_database=True):
+    if mysql is None:
+        raise RuntimeError('mysql-connector-python is not installed')
+    config = _mysql_config(include_database=include_database)
+    if not config:
+        raise RuntimeError('Missing MySQL env vars: MYSQL_USER and MYSQL_DATABASE')
+    return mysql.connect(**config)
+
+
+def _ensure_ride_history_table():
+    """Create the MySQL database/table used for persisted ride history."""
+    global db_initialized, db_error
+    if db_initialized:
+        return True
+    with db_lock:
+        if db_initialized:
+            return True
+        try:
+            database = os.getenv('MYSQL_DATABASE')
+            if not database:
+                raise RuntimeError('Missing MYSQL_DATABASE')
+            root_conn = _mysql_connection(include_database=False)
+            root_cursor = root_conn.cursor()
+            root_cursor.execute(
+                f"CREATE DATABASE IF NOT EXISTS `{database}` "
+                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+            )
+            root_conn.commit()
+            root_cursor.close()
+            root_conn.close()
+
+            conn = _mysql_connection(include_database=True)
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ride_history (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    ride_id VARCHAR(40) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    mode VARCHAR(24) NOT NULL,
+                    pickup_index INT NOT NULL,
+                    pickup_label VARCHAR(8) NOT NULL,
+                    dropoff_index INT NOT NULL,
+                    dropoff_label VARCHAR(8) NOT NULL,
+                    hazard_source VARCHAR(80),
+                    success BOOLEAN NOT NULL,
+                    total_reward DOUBLE NOT NULL,
+                    total_steps INT NOT NULL,
+                    energy_remaining DOUBLE,
+                    satisfaction_bonus DOUBLE,
+                    pickup_time INT,
+                    dropoff_time INT,
+                    route_json LONGTEXT,
+                    steps_json LONGTEXT,
+                    live_warnings_json LONGTEXT,
+                    live_samples_json LONGTEXT,
+                    map_details_json LONGTEXT,
+                    INDEX idx_created_at (created_at),
+                    INDEX idx_success (success),
+                    INDEX idx_mode (mode)
+                )
+            """)
+            _ensure_ride_history_column(cursor, database, 'live_samples_json', 'LONGTEXT')
+            _ensure_ride_history_column(cursor, database, 'map_details_json', 'LONGTEXT')
+            conn.commit()
+            cursor.close()
+            conn.close()
+            db_initialized = True
+            db_error = None
+            return True
+        except Exception as exc:
+            db_error = str(exc)
+            print(f"MySQL ride history unavailable: {db_error}", flush=True)
+            return False
+
+
+def _ensure_ride_history_column(cursor, database, column_name, column_type):
+    """Add a ride_history column when upgrading an existing local database."""
+    cursor.execute("""
+        SELECT COUNT(*)
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'ride_history' AND COLUMN_NAME = %s
+    """, (database, column_name))
+    exists = cursor.fetchone()[0] > 0
+    if not exists:
+        cursor.execute(f"ALTER TABLE ride_history ADD COLUMN {column_name} {column_type}")
+
+
+def _map_details_for_history(env, route):
+    """Build a compact JSON payload with map-specific ride details."""
+    cells = []
+    for cell in env.get_grid_state().get('cells', []):
+        lat, lng = _grid_lat_lng(cell['row'], cell['col'])
+        cells.append({
+            'row': cell['row'],
+            'col': cell['col'],
+            'lat': round(lat, 6),
+            'lng': round(lng, 6),
+            'traffic': cell.get('traffic', 0),
+            'weather': cell.get('weather', 0),
+        })
+
+    pickup_map = MAP_LOCS_ADJUSTED[env.pass_loc] if env.pass_loc < len(MAP_LOCS_ADJUSTED) else {}
+    dropoff_map = MAP_LOCS_ADJUSTED[env.destination] if env.destination < len(MAP_LOCS_ADJUSTED) else {}
+    return {
+        'grid_size': GRID_SIZE,
+        'pickup': {
+            'index': env.pass_loc,
+            'label': LOC_LABELS[env.pass_loc],
+            'grid': {'row': LOCS[env.pass_loc][0], 'col': LOCS[env.pass_loc][1]},
+            'map': pickup_map,
+        },
+        'dropoff': {
+            'index': env.destination,
+            'label': LOC_LABELS[env.destination],
+            'grid': {'row': LOCS[env.destination][0], 'col': LOCS[env.destination][1]},
+            'map': dropoff_map,
+        },
+        'final_taxi': {'row': env.taxi_row, 'col': env.taxi_col},
+        'route': route,
+        'cells': cells,
+        'hazard_source': getattr(env, 'hazard_source', 'generated'),
+        'hazards_fetched_at': getattr(env, 'hazards_fetched_at', None),
+    }
+
+
+def _record_ride_history(env, mode, hazard_source=None, steps_log=None):
+    """Persist a completed ride to MySQL when configured."""
+    if getattr(env, 'ride_recorded', False):
+        return False
+    if not _ensure_ride_history_table():
+        return False
+    route = _planned_route(env)
+    live_warnings = getattr(env, 'live_warnings', [])
+    live_samples = getattr(env, 'live_samples', [])
+    if steps_log is None:
+        steps_log = getattr(env, 'ride_steps', [])
+    map_details = _map_details_for_history(env, route)
+    payload = {
+        'ride_id': f"ride-{int(time.time() * 1000)}",
+        'mode': mode,
+        'pickup_index': int(env.pass_loc),
+        'pickup_label': LOC_LABELS[env.pass_loc],
+        'dropoff_index': int(env.destination),
+        'dropoff_label': LOC_LABELS[env.destination],
+        'hazard_source': hazard_source or getattr(env, 'hazard_source', 'generated'),
+        'success': bool(env.done and env.dropoff_time is not None),
+        'total_reward': float(round(env.total_reward, 2)),
+        'total_steps': int(env.steps),
+        'energy_remaining': float(round(getattr(env, 'energy', 0.0), 2)),
+        'satisfaction_bonus': float(round(getattr(env, 'sat_bonus', 0.0), 2)),
+        'pickup_time': env.pickup_time,
+        'dropoff_time': env.dropoff_time,
+        'route_json': json.dumps(route),
+        'steps_json': json.dumps(steps_log or []),
+        'live_warnings_json': json.dumps(live_warnings),
+        'live_samples_json': json.dumps(live_samples),
+        'map_details_json': json.dumps(map_details),
+    }
+    try:
+        conn = _mysql_connection(include_database=True)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO ride_history (
+                ride_id, mode, pickup_index, pickup_label, dropoff_index, dropoff_label,
+                hazard_source, success, total_reward, total_steps, energy_remaining,
+                satisfaction_bonus, pickup_time, dropoff_time, route_json, steps_json,
+                live_warnings_json, live_samples_json, map_details_json
+            )
+            VALUES (
+                %(ride_id)s, %(mode)s, %(pickup_index)s, %(pickup_label)s,
+                %(dropoff_index)s, %(dropoff_label)s, %(hazard_source)s, %(success)s,
+                %(total_reward)s, %(total_steps)s, %(energy_remaining)s,
+                %(satisfaction_bonus)s, %(pickup_time)s, %(dropoff_time)s,
+                %(route_json)s, %(steps_json)s, %(live_warnings_json)s,
+                %(live_samples_json)s, %(map_details_json)s
+            )
+        """, payload)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        env.ride_recorded = True
+        return True
+    except Exception as exc:
+        print(f"MySQL ride history insert failed: {exc}", flush=True)
+        return False
 
 
 # ──────────────────────────────────────────────
@@ -239,6 +453,9 @@ def sim_new():
             if live:
                 data = {**data, **_fetch_live_hazard_payload()}
             hazard_source = _apply_external_hazards(sim_env, data)
+            sim_env.ride_mode = 'live' if live else 'manual'
+            sim_env.ride_recorded = False
+            sim_env.ride_steps = []
         except ValueError as exc:
             return jsonify({'ok': False, 'error': str(exc)}), 400
         except RuntimeError as exc:
@@ -281,6 +498,26 @@ def sim_step():
             decision_reason = _decision_reason(sim_env, action)
 
         next_state, reward, done, info = sim_env.step(action)
+        sim_env.ride_steps.append({
+            'step': info['steps'],
+            'action': action,
+            'action_name': ACTION_NAMES[action],
+            'taxi': {'row': sim_env.taxi_row, 'col': sim_env.taxi_col},
+            'pass_on_board': info.get('pass_on_board', sim_env.pass_on_board),
+            'reward': info['reward'],
+            'total_reward': info['total_reward'],
+            'event': info['event'],
+            'energy': info.get('energy', 100),
+            'traffic_penalty': info.get('traffic_penalty', 0),
+            'weather_penalty': info.get('weather_penalty', 0),
+            'decision_reason': decision_reason,
+        })
+        if done:
+            _record_ride_history(
+                sim_env,
+                getattr(sim_env, 'ride_mode', 'manual'),
+                getattr(sim_env, 'hazard_source', 'generated'),
+            )
         grid = _serialize_state(sim_env)
 
     from taxi_env import ACTION_NAMES
@@ -326,6 +563,8 @@ def sim_auto():
         if live:
             data = {**data, **_fetch_live_hazard_payload()}
         hazard_source = _apply_external_hazards(env, data)
+        env.ride_mode = 'live_auto' if live else 'auto'
+        env.ride_recorded = False
     except ValueError as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 400
     except RuntimeError as exc:
@@ -356,6 +595,9 @@ def sim_auto():
         })
         if done:
             break
+
+    if env.done:
+        _record_ride_history(env, getattr(env, 'ride_mode', 'auto'), hazard_source, steps_log)
 
     return jsonify({
         'ok': True,
@@ -435,6 +677,81 @@ def gcn_stats():
         'ok': True,
         'gcn': gcn_model.summary() if gcn_model else {'trained': False},
     })
+
+
+@app.route('/api/ride-history')
+def ride_history():
+    """Return recent persisted ride history from MySQL."""
+    limit = int(request.args.get('limit', 25))
+    limit = max(1, min(limit, 100))
+    if not _ensure_ride_history_table():
+        return jsonify({
+            'ok': False,
+            'db_enabled': False,
+            'error': db_error or 'MySQL ride history is not configured',
+            'rides': [],
+        }), 200
+
+    conn = _mysql_connection(include_database=True)
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT
+            id, ride_id, created_at, mode, pickup_index, pickup_label,
+            dropoff_index, dropoff_label, hazard_source, success,
+            total_reward, total_steps, energy_remaining, satisfaction_bonus,
+            pickup_time, dropoff_time,
+            CASE WHEN live_samples_json IS NULL OR live_samples_json = '[]' THEN 0 ELSE 1 END AS has_live_samples,
+            CASE WHEN map_details_json IS NULL OR map_details_json = '{}' THEN 0 ELSE 1 END AS has_map_details
+        FROM ride_history
+        ORDER BY created_at DESC
+        LIMIT %s
+    """, (limit,))
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    for row in rows:
+        if row.get('created_at') is not None:
+            row['created_at'] = row['created_at'].isoformat()
+        row['success'] = bool(row.get('success'))
+        row['has_live_samples'] = bool(row.get('has_live_samples'))
+        row['has_map_details'] = bool(row.get('has_map_details'))
+
+    return jsonify({'ok': True, 'db_enabled': True, 'rides': rows})
+
+
+@app.route('/api/ride-history/<int:ride_id>')
+def ride_history_detail(ride_id):
+    """Return one ride with persisted route, step, and live map JSON details."""
+    if not _ensure_ride_history_table():
+        return jsonify({
+            'ok': False,
+            'db_enabled': False,
+            'error': db_error or 'MySQL ride history is not configured',
+        }), 200
+
+    conn = _mysql_connection(include_database=True)
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT *
+        FROM ride_history
+        WHERE id = %s
+        LIMIT 1
+    """, (ride_id,))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if not row:
+        return jsonify({'ok': False, 'error': 'Ride not found'}), 404
+
+    if row.get('created_at') is not None:
+        row['created_at'] = row['created_at'].isoformat()
+    row['success'] = bool(row.get('success'))
+    for key in ('route_json', 'steps_json', 'live_warnings_json', 'live_samples_json', 'map_details_json'):
+        value = row.pop(key, None)
+        row[key.replace('_json', '')] = json.loads(value) if value else None
+
+    return jsonify({'ok': True, 'db_enabled': True, 'ride': row})
 
 
 @app.route('/api/live/hazards')
