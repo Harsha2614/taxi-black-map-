@@ -520,7 +520,6 @@ def sim_step():
             )
         grid = _serialize_state(sim_env)
 
-    from taxi_env import ACTION_NAMES
     return jsonify({
         'ok': True,
         'action': action,
@@ -1614,8 +1613,25 @@ if os.path.exists(GCN_PATH):
     except Exception:
         gcn_model = None
 
+if os.path.exists(QTABLE_PATH):
+    try:
+        saved_qtable = np.load(QTABLE_PATH)
+        if saved_qtable.shape == agent.q_table.shape:
+            agent.q_table = saved_qtable
+            agent.trained = True
+            agent.epsilon = agent.epsilon_min
+        else:
+            print(
+                f"Saved Q-table shape {saved_qtable.shape} does not match "
+                f"expected {agent.q_table.shape}; train again.",
+                flush=True,
+            )
+    except Exception as exc:
+        print(f"Could not load saved Q-table: {exc}", flush=True)
+
 
 if __name__ == '__main__':
     print("\nServer ready at http://localhost:5000")
-    print("Model starts untrained. Train it from the UI before simulating.\n")
+    print("Saved model loaded." if agent.trained else "Model starts untrained. Train it from the UI before simulating.")
+    print()
     app.run(debug=False, host='0.0.0.0', port=5000)
